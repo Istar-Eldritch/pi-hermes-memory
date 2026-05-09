@@ -1,19 +1,27 @@
 graph TB
-    subgraph "Persistent Storage"
+    subgraph "Core Persistent Storage (Markdown)"
         MEM["MEMORY.md<br/><i>Agent's notes</i>"]
         USR["USER.md<br/><i>User profile</i>"]
         FAIL["failures.md<br/><i>Failure memory</i><br/>corrections, insights, failures"]
         SKL["skills/<br/><i>Procedural memory</i><br/>debug-ts.md<br/>deploy-checklist.md"]
     end
 
+    subgraph "Search Store (SQLite sessions.db)"
+        SQM["memories table + FTS5<br/><i>search mirror/store</i>"]
+        SQS["sessions/messages + FTS5<br/><i>session search</i>"]
+    end
+
     subgraph "System Prompt (frozen snapshot)"
-        SMEM["Memory block<br/>Full content"]
-        SUSR["User block<br/>Full content"]
+        SMEM["Memory block<br/>from Markdown only"]
+        SUSR["User block<br/>from Markdown only"]
         SFAIL["Failures block<br/>Recent 7 days, max 5"]
         SSKL["Skill index<br/>Names + descriptions only"]
     end
 
-    subgraph "On Demand (via skill tool)"
+    subgraph "On Demand"
+        MSEARCH["memory_search<br/><i>query SQLite memories</i>"]
+        SSEARCH["session_search<br/><i>query indexed sessions</i>"]
+        BACKFILL["/memory-sync-markdown<br/><i>idempotent Markdown → SQLite sync</i>"]
         FULL["Full skill content<br/>Loaded when needed"]
     end
 
@@ -23,8 +31,18 @@ graph TB
     SKL --> SSKL
     SSKL -.->|"skill view"| FULL
 
+    MEM -.->|"successful saves mirrored"| SQM
+    USR -.->|"successful saves mirrored"| SQM
+    FAIL -.->|"successful saves mirrored"| SQM
+    BACKFILL --> SQM
+    MSEARCH --> SQM
+    SSEARCH --> SQS
+
     style SMEM fill:#1a1a2e,stroke:#e94560,color:#fff
     style SUSR fill:#1a1a2e,stroke:#e94560,color:#fff
     style SFAIL fill:#2d1b2e,stroke:#ff6b6b,color:#fff
     style SSKL fill:#16213e,stroke:#0f3460,color:#fff
+    style SQM fill:#0b525b,stroke:#fff,color:#fff
+    style SQS fill:#1b4332,stroke:#fff,color:#fff
+    style BACKFILL fill:#3a0ca3,stroke:#fff,color:#fff
     style FULL fill:#0a1128,stroke:#1282a2,color:#fff

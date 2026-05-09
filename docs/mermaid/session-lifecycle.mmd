@@ -2,49 +2,52 @@ sequenceDiagram
     participant User
     participant Pi
     participant Extension
-    participant Disk as ~/.pi/agent/memory/
+    participant MD as Markdown (~/.pi/agent/...)
+    participant SQL as SQLite (sessions.db)
 
-    Note over Pi,Disk: ── Session Start ──
+    Note over Pi,SQL: ── Session Start ──
     Pi->>Extension: session_start event
-    Extension->>Disk: loadFromDisk() — read MEMORY.md + USER.md + failures.md + skills/
+    Extension->>MD: loadFromDisk() — MEMORY.md + USER.md + failures.md + skills/
     Extension-->>Extension: Capture frozen snapshot (memory + failures + skill index)
 
-    Note over Pi,Disk: ── System Prompt Injection ──
+    Note over Pi,SQL: ── System Prompt Injection ──
     Pi->>Extension: before_agent_start event
-    Extension-->>Pi: systemPrompt + frozen memory + failures block + skill index
-    Note right of Pi: Agent now "remembers"<br/>facts, failures, AND procedures<br/>from past sessions
+    Extension-->>Pi: systemPrompt + frozen Markdown memory blocks
+    Note right of Pi: Prompt context comes from Markdown core memory
 
-    Note over Pi,Disk: ── Agent Loop ──
+    Note over Pi,SQL: ── Agent Loop (memory add) ──
     User->>Pi: "Remember I prefer vim"
     Pi->>Extension: tool_call (memory, add)
-    Extension->>Extension: scanContent() — security check
-    Extension->>Disk: Atomic write to USER.md
-    Extension-->>Pi: { success: true, usage: "3% — 41/5000" }
+    Extension->>Extension: scanContent() security check
+    Extension->>MD: Atomic write to USER.md
+    alt Markdown save success
+        Extension->>SQL: best-effort sync to memories table
+        Extension-->>Pi: success (plus warning only if sync fails)
+    else Markdown save fails (limit/validation)
+        Extension-->>Pi: fail (no SQLite-only fallback)
+    end
 
-    Note over Pi,Disk: ── User Correction ──
+    Note over Pi,SQL: ── User Correction ──
     User->>Pi: "No, don't use npm — use pnpm"
     Extension->>Extension: isCorrection() = true
     Extension->>Pi: pi.exec("pi -p", correctionPrompt)
-    Extension->>Disk: Save as failure memory [correction]
-    Note right of Pi: Immediate save<br/>no waiting for nudge
+    Extension->>MD: Save [correction] failure memory
+    Extension->>SQL: best-effort correction sync
 
-    Note over Pi,Disk: ── Failure Detection ──
-    User->>Pi: "That didn't work, try X instead"
-    Extension->>Extension: isCorrection() = true
-    Extension->>Disk: addFailure(category: "failure")
-    Note right of Pi: Stores what failed<br/>and why for learning
+    Note over Pi,SQL: ── Search + Backfill ──
+    Pi->>Extension: memory_search(query)
+    Extension->>SQL: FTS5 search memories
+    SQL-->>Extension: results
+    Pi->>Extension: /memory-sync-markdown
+    Extension->>MD: scan global + project Markdown files
+    Extension->>SQL: idempotent Markdown → SQLite import
 
-    Note over Pi,Disk: ── Complex Task (8+ tool calls) ──
-    Pi->>Extension: turn_end (8 tool calls, 3 tool types)
-    Extension->>Pi: pi.exec("pi -p", skillExtractionPrompt)
-    Note right of Pi: Extract reusable<br/>procedure as skill
-
-    Note over Pi,Disk: ── Background Review (10 turns or 15 tool calls) ──
-    Pi->>Extension: turn_end event
+    Note over Pi,SQL: ── Background Learning ──
+    Pi->>Extension: turn_end (10 turns or 15 tool calls)
     Extension->>Pi: pi.exec("pi -p", reviewPrompt)
-    Note right of Pi: Reviews conversation<br/>saves memories, failures, AND skills
+    Note right of Pi: Review can save memories/failures/skills
 
-    Note over Pi,Disk: ── Session End ──
+    Note over Pi,SQL: ── Session End ──
     Pi->>Extension: session_shutdown event
     Extension->>Pi: pi.exec("pi -p", flushPrompt)
-    Note right of Pi: One last turn to flush<br/>anything worth saving
+    Note right of Pi: final chance to save durable learnings
