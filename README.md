@@ -30,6 +30,9 @@ pi install npm:pi-hermes-memory
 # Index your past sessions (one-time)
 /memory-index-sessions
 
+# Backfill older Markdown memories into SQLite search (optional)
+/memory-sync-markdown
+
 # Learn how to use it
 /learn-memory-tool
 ```
@@ -40,6 +43,7 @@ pi install npm:pi-hermes-memory
 |---|---|
 | 🔍 **Session Search** | Search across all past conversations via SQLite FTS5 |
 | 🧠 **Persistent Memory** | Facts, preferences, lessons saved to markdown files |
+| 🔄 **Memory Search Sync** | Successful Markdown memory writes are mirrored into SQLite for `memory_search` |
 | ⚠️ **Failure Memory** | Learn from failures — stores what didn't work and why |
 | 📚 **Procedural Skills** | The agent saves *how* it solved problems as reusable docs |
 | ⚡ **Background Learning** | Every 10 turns (or 15 tool calls) the agent reviews and saves |
@@ -253,11 +257,18 @@ Session history is indexed automatically on session shutdown. To bulk-import exi
 
 ### Extended Memory Store
 
-When the core memory (5,000 chars) isn't enough, the agent can store additional memories in the SQLite-backed extended store. These are searchable via `memory_search` but not automatically injected into the system prompt.
+The extension keeps Markdown memory as the source of truth for prompt injection and human-readable editing, and mirrors successful writes into the SQLite-backed search store used by `memory_search`.
+
+This means:
+- Fresh `memory` tool writes become searchable immediately
+- Older Markdown entries can be backfilled with `/memory-sync-markdown`
+- SQLite search does **not** replace the core Markdown limit or prompt injection behavior
 
 This is the **hybrid memory architecture**:
-- **Core memory** (MEMORY.md/USER.md): Always injected, 5,000 chars each, human-readable
-- **Extended memory** (SQLite): Unlimited, searchable on demand, agent-driven
+- **Core memory** (MEMORY.md/USER.md/failures.md): Always injected, human-readable, size-limited
+- **SQLite memory mirror/store** (`sessions.db`): Searchable on demand via `memory_search`
+
+Important: if core Markdown memory is full and consolidation cannot free space, the write still fails. This package does **not** silently spill failed core-memory writes into SQLite-only storage.
 
 ### Correction Detection
 
@@ -310,6 +321,7 @@ This means skills build up naturally over time without you having to ask.
 | `/memory-interview` | Answer a few questions to pre-fill your user profile |
 | `/memory-switch-project` | List all project memories and their entry counts |
 | `/memory-index-sessions` | Import past Pi sessions into the search database |
+| `/memory-sync-markdown` | Backfill Markdown memories into the SQLite search store |
 | `/learn-memory-tool` | Skill that teaches users how to use the memory system |
 
 ### `/memory-insights` Output
@@ -411,6 +423,8 @@ The `sessions.db` SQLite database stores session history and extended memory ent
 - **`§` delimiter**: Memory entries are separated by `§` (section sign). If an entry naturally contains `§`, it will be split incorrectly on reload. This is rare in English text but possible. [Hermes uses the same delimiter.]
 - **Background review cost**: Each review cycle costs one full LLM API call via a child `pi -p` process. Correction detection and skill auto-extraction add occasional extra calls.
 - **Session search requires indexing**: Past sessions must be indexed before they're searchable. Run `/memory-index-sessions` to bulk-import, or let the extension auto-index on session shutdown.
+- **Older Markdown memories may need backfill**: If you saved memories before the SQLite mirror existed or search looks stale, run `/memory-sync-markdown`.
+- **Core memory limits still apply**: SQLite search mirroring does not bypass the 5,000-char core Markdown limit. If consolidation cannot free space, the write fails instead of becoming SQLite-only memory invisibly.
 - **System prompts are invisible**: Pi's TUI does not display the system prompt. Memory injection works but you won't see it in the interface — verify by asking the agent a question that relies on stored memory.
 - **Skills are agent-generated**: Skills are created by the agent based on its experience. They may not always be perfectly structured. You can edit or delete them in `~/.pi/agent/memory/skills/`.
 

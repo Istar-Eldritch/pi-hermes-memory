@@ -41,7 +41,7 @@ export function registerLearnMemoryCommand(pi: ExtensionAPI): void {
         lines.push("  User:     Who you are — name, preferences, communication style");
         lines.push("  Failures: What didn't work — corrections, failures, insights");
         lines.push("  Skills:   Procedures — how to debug, deploy, test");
-        lines.push("  Extended: Searchable memories beyond the core limit");
+        lines.push("  Extended: SQLite search mirror for Markdown memory + backfill");
         lines.push("");
         lines.push("  Memory Categories:");
         lines.push("  ─────────────────");
@@ -70,7 +70,7 @@ export function registerLearnMemoryCommand(pi: ExtensionAPI): void {
         lines.push("    Search past conversations across all sessions");
         lines.push("");
         lines.push("  memory_search");
-        lines.push("    Search extended memory store (unlimited)");
+        lines.push("    Search the SQLite-backed memory mirror/store");
         lines.push("    Filters: project, target, category");
         lines.push("    Categories: failure, correction, insight, preference, convention, tool-quirk");
       }
@@ -87,6 +87,7 @@ export function registerLearnMemoryCommand(pi: ExtensionAPI): void {
         lines.push("  /memory-interview     Answer questions to pre-fill profile");
         lines.push("  /memory-switch-project List all project memories");
         lines.push("  /memory-index-sessions Import past sessions for search");
+        lines.push("  /memory-sync-markdown Backfill Markdown memories into SQLite");
       }
 
       if (section.startsWith("✅")) {
@@ -115,12 +116,13 @@ export function registerLearnMemoryCommand(pi: ExtensionAPI): void {
         lines.push("  ╚══════════════════════════════════════════════╝");
         lines.push("");
         lines.push("  1. Session starts     → Core memory + recent failures injected");
-        lines.push("  2. During conversation → Agent saves via memory tool");
-        lines.push("  3. Every 10 turns     → Background review saves items");
-        lines.push("  4. On correction      → Immediate save as [correction] category");
-        lines.push("  5. On failure         → Saves what failed + why");
-        lines.push("  6. When full          → Auto-consolidation merges");
-        lines.push("  7. Session ends       → Final flush");
+        lines.push("  2. During conversation → Agent saves to Markdown memory");
+        lines.push("  3. Successful saves   → Best-effort SQLite search sync");
+        lines.push("  4. Every 10 turns     → Background review saves items");
+        lines.push("  5. On correction      → Immediate save as [correction] category");
+        lines.push("  6. On failure         → Saves what failed + why");
+        lines.push("  7. When full          → Auto-consolidation merges");
+        lines.push("  8. Session ends       → Final flush");
       }
 
       if (section.startsWith("🏗️")) {
@@ -137,10 +139,11 @@ export function registerLearnMemoryCommand(pi: ExtensionAPI): void {
         lines.push("  │ Project memory — When cwd matches   │");
         lines.push("  └─────────────────────────────────────┘");
         lines.push("");
-        lines.push("  Searchable on Demand (Unlimited)");
+        lines.push("  Searchable on Demand (SQLite mirror/store)");
         lines.push("  ┌─────────────────────────────────────┐");
         lines.push("  │ session_search(\"auth flow\")         │");
         lines.push("  │ memory_search(\"testing patterns\")   │");
+        lines.push("  │ /memory-sync-markdown (backfill old md)│");
         lines.push("  │ memory_search(\"auth\", cat:\"failure\")│");
         lines.push("  └─────────────────────────────────────┘");
       }
@@ -153,9 +156,11 @@ export function registerLearnMemoryCommand(pi: ExtensionAPI): void {
         lines.push("");
         lines.push("  \"Memory is full\"");
         lines.push("    → /memory-consolidate to merge entries");
+        lines.push("    → If it still fails, the save does NOT silently become SQLite-only");
         lines.push("");
         lines.push("  \"Can't find something\"");
-        lines.push("    → memory_search to search extended store");
+        lines.push("    → memory_search to search the SQLite mirror/store");
+        lines.push("    → /memory-sync-markdown to import older Markdown entries");
         lines.push("");
         lines.push("  \"Agent forgot something\"");
         lines.push("    → Check /memory-insights, tell agent \"remember X\"");
