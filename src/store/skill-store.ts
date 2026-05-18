@@ -92,13 +92,16 @@ export class SkillStore {
   async migrateLegacySkills(): Promise<LegacySkillMigrationResult> {
     const result: LegacySkillMigrationResult = { migrated: 0, skipped: 0, warnings: [] };
 
+    // Always normalize flat markdown files under the global skills root,
+    // even when a previous migration sentinel already exists.
+    await this.migrateFlatMarkdownInGlobalSkillsDir(result);
+
     if (await exists(this.migrationSentinelPath)) return result;
 
     await fs.mkdir(path.dirname(this.migrationSentinelPath), { recursive: true });
 
     try {
       await this.migrateLegacyMarkdownSkills(result);
-      await this.migrateFlatMarkdownInGlobalSkillsDir(result);
       await this.migrateLegacyPiGlobalSkillDirs(result);
     } finally {
       if (result.warnings.length === 0) {

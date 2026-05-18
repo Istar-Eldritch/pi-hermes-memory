@@ -83,8 +83,17 @@ export default function (pi: ExtensionAPI) {
   const agentRoot = path.join(os.homedir(), ".pi", "agent");
   const legacyGlobalDir = path.join(agentRoot, "memory");
   const defaultGlobalDir = path.join(agentRoot, "pi-hermes-memory");
-  const globalDir = config.memoryDir ?? defaultGlobalDir;
 
+  const configuredMemoryDir = config.memoryDir?.trim();
+  const pointsToLegacyMemoryDir = configuredMemoryDir
+    ? path.resolve(configuredMemoryDir) === path.resolve(legacyGlobalDir)
+    : false;
+
+  const globalDir = !configuredMemoryDir || pointsToLegacyMemoryDir
+    ? defaultGlobalDir
+    : configuredMemoryDir;
+
+  const shouldMigrateExtensionRoot = !configuredMemoryDir || pointsToLegacyMemoryDir;
   let extensionRootMigrated = false;
 
   const store = new MemoryStore({ ...config, memoryDir: globalDir });
@@ -128,7 +137,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── 1. Load memory from disk on session start ──
   pi.on("session_start", async (event, _ctx) => {
-    if (!config.memoryDir && !extensionRootMigrated) {
+    if (shouldMigrateExtensionRoot && !extensionRootMigrated) {
       try {
         await migrateExtensionRoot(legacyGlobalDir, globalDir);
       } catch {
