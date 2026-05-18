@@ -34,7 +34,7 @@ export function registerIndexSessionsCommand(pi: ExtensionAPI): void {
 
         ctx.ui.notify(`📁 Found ${totalFiles} session files across ${projectDirs.length} projects\n⏳ Indexing...`, 'info');
 
-        const memoryDir = path.join(os.homedir(), '.pi', 'agent', 'memory');
+        const memoryDir = path.join(os.homedir(), '.pi', 'agent', 'pi-hermes-memory');
         const dbManager = new DatabaseManager(memoryDir);
 
         try {

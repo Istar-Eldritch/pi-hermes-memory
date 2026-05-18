@@ -2,6 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildSkillRows,
+  buildUnifiedSkillRows,
+  collectLoadedSkillsFromCommands,
   confirmDeleteSelectedSkills,
   deleteSelectedSkills,
   filterSkillRows,
@@ -34,6 +36,27 @@ const SAMPLE_SKILLS: SkillIndex[] = [
   },
 ];
 
+const LOADED_SKILL_COMMANDS = [
+  {
+    name: "skill:debug-typescript-errors",
+    description: "Trace compiler issues step by step",
+    source: "skill",
+    sourceInfo: { path: "/tmp/global/debug-typescript-errors/SKILL.md" },
+  },
+  {
+    name: "skill:langgraph-fundamentals",
+    description: "LangGraph patterns",
+    source: "skill",
+    sourceInfo: { path: "/Users/demo/.agents/skills/langgraph-fundamentals/SKILL.md" },
+  },
+  {
+    name: "memory-skills",
+    description: "not a skill command",
+    source: "extension",
+    sourceInfo: { path: "/tmp/ignore" },
+  },
+] as const;
+
 describe("skills command helpers", () => {
   it("buildSkillRows preserves selected ids", () => {
     const rows = buildSkillRows(SAMPLE_SKILLS, new Set(["project:demo-project:deploy-checklist"]));
@@ -50,6 +73,42 @@ describe("skills command helpers", () => {
 
     assert.strictEqual(filtered.length, 1);
     assert.strictEqual(filtered[0].skillId, "global:debug-typescript-errors");
+  });
+
+  it("collectLoadedSkillsFromCommands returns loaded runtime skills only", () => {
+    const loaded = collectLoadedSkillsFromCommands(LOADED_SKILL_COMMANDS as any);
+
+    assert.strictEqual(loaded.length, 2);
+    assert.strictEqual(loaded[0]?.name, "debug-typescript-errors");
+    assert.strictEqual(loaded[1]?.name, "langgraph-fundamentals");
+  });
+
+  it("collectLoadedSkillsFromCommands ignores malformed and pathless commands", () => {
+    const loaded = collectLoadedSkillsFromCommands([
+      { source: "skill", name: "skill:valid", sourceInfo: { path: "/tmp/valid/SKILL.md" } },
+      { source: "skill", name: "skill:no-path", sourceInfo: {} },
+      { source: "skill", name: "skill:blank-path", sourceInfo: { path: "   " } },
+      { source: "skill", name: "   ", sourceInfo: { path: "/tmp/blank-name/SKILL.md" } },
+      { source: "skill", sourceInfo: { path: "/tmp/missing-name/SKILL.md" } },
+      { source: "skill", name: 123, sourceInfo: { path: "/tmp/invalid-name/SKILL.md" } },
+      { source: "extension", name: "memory-skills", sourceInfo: { path: "/tmp/ignore/SKILL.md" } },
+      null as any,
+    ] as any);
+
+    assert.strictEqual(loaded.length, 1);
+    assert.strictEqual(loaded[0]?.name, "valid");
+    assert.strictEqual(loaded[0]?.path, "/tmp/valid/SKILL.md");
+  });
+
+  it("buildUnifiedSkillRows merges managed and external skills", () => {
+    const loaded = collectLoadedSkillsFromCommands(LOADED_SKILL_COMMANDS as any);
+    const rows = buildUnifiedSkillRows(SAMPLE_SKILLS, loaded);
+
+    assert.strictEqual(rows.length, 3);
+    const external = rows.find((row) => row.category === "E");
+    assert.ok(external);
+    assert.strictEqual(external?.mutable, false);
+    assert.ok(external?.displayPath.includes(".agents"));
   });
 
   it("moveSelectedSkills blocks project moves without an active project", async () => {
@@ -264,7 +323,7 @@ describe("SkillsManagerModal", () => {
     modal.handleInput("z");
 
     const output = modal.render(100).join("\n");
-    assert.ok(output.includes("No skills match the current search."));
+    assert.ok(output.includes("No skills match the current filters/search."));
   });
 
   it("redirects printable keys to search from list focus", () => {
@@ -283,7 +342,7 @@ describe("SkillsManagerModal", () => {
 
     modal.handleInput("z");
     const output = modal.render(100).join("\n");
-    assert.ok(output.includes("No skills match the current search."));
+    assert.ok(output.includes("No skills match the current filters/search."));
   });
 
   it("uses in-modal delete confirmation and cancels with n", () => {
@@ -377,6 +436,72 @@ describe("SkillsManagerModal", () => {
 
     assert.strictEqual(harness.getRenderCount(), renderCountBeforeResolve);
   });
+
+  it("supports in-modal category filters", () => {
+    const harness = createModalHarness();
+    const loaded = collectLoadedSkillsFromCommands(LOADED_SKILL_COMMANDS as any);
+    const rows = buildUnifiedSkillRows(SAMPLE_SKILLS, loaded);
+
+    const modal = new SkillsManagerModal(
+      harness.tui as any,
+      harness.theme as any,
+      rows,
+      {
+        moveSelected: async () => ({ skills: SAMPLE_SKILLS, summaryLines: ["done"] }),
+        deleteSelected: async () => ({ skills: SAMPLE_SKILLS, summaryLines: ["done"] }),
+        close: () => undefined,
+        projectName: "demo-project",
+      },
+      { managedSkills: SAMPLE_SKILLS, loadedSkills: loaded },
+    );
+
+    modal.handleInput("f");
+    modal.handleInput(" "); // disable global
+    modal.handleInput("\u001b[B");
+    modal.handleInput(" "); // disable project
+    modal.handleInput("\r"); // apply
+
+    const output = modal.render(120).join("\n");
+    assert.ok(output.includes("langgraph-fundamentals"));
+    assert.ok(!output.includes("Deploy Checklist"));
+  });
+
+  it("blocks external skill mutations as read-only", async () => {
+    const harness = createModalHarness();
+    const loaded = collectLoadedSkillsFromCommands(LOADED_SKILL_COMMANDS as any);
+    const rows = buildUnifiedSkillRows(SAMPLE_SKILLS, loaded);
+    let moveCalls = 0;
+
+    const modal = new SkillsManagerModal(
+      harness.tui as any,
+      harness.theme as any,
+      rows,
+      {
+        moveSelected: async () => {
+          moveCalls++;
+          return { skills: SAMPLE_SKILLS, summaryLines: ["done"] };
+        },
+        deleteSelected: async () => ({ skills: SAMPLE_SKILLS, summaryLines: ["done"] }),
+        close: () => undefined,
+        projectName: "demo-project",
+      },
+      { managedSkills: SAMPLE_SKILLS, loadedSkills: loaded },
+    );
+
+    modal.handleInput("f");
+    modal.handleInput(" ");
+    modal.handleInput("\u001b[B");
+    modal.handleInput(" ");
+    modal.handleInput("\r");
+
+    modal.handleInput(" ");
+    modal.handleInput("g");
+    await nextTick();
+
+    const output = modal.render(120).join("\n");
+    assert.strictEqual(moveCalls, 0);
+    assert.ok(output.includes("read-only"));
+  });
 });
 
 describe("registerSkillsCommand", () => {
@@ -398,6 +523,66 @@ describe("registerSkillsCommand", () => {
 
     await commands[0].handler({}, {
       hasUI: false,
+      ui: {
+        notify: (message: string, severity: string) => notifications.push({ message, severity }),
+      },
+    });
+
+    assert.strictEqual(notifications.length, 1);
+    assert.strictEqual(notifications[0].severity, "info");
+    assert.ok(notifications[0].message.includes("Procedural Skills"));
+  });
+
+  it("uses pi.getCommands runtime inventory for external skills", async () => {
+    const commands: Array<{ name: string; handler: Function }> = [];
+    const notifications: Array<{ message: string; severity: string }> = [];
+    const pi = {
+      registerCommand: (name: string, opts: { handler: Function }) => {
+        commands.push({ name, handler: opts.handler });
+      },
+      getCommands: () => LOADED_SKILL_COMMANDS,
+    };
+    const store = {
+      loadIndex: async () => SAMPLE_SKILLS,
+      getProjectName: () => "demo-project",
+    };
+
+    registerSkillsCommand(pi as any, store as any);
+
+    await commands[0].handler({}, {
+      hasUI: false,
+      ui: {
+        notify: (message: string, severity: string) => notifications.push({ message, severity }),
+      },
+    });
+
+    assert.strictEqual(notifications.length, 1);
+    assert.strictEqual(notifications[0].severity, "info");
+    assert.ok(notifications[0].message.includes("[E] External Skills"));
+    assert.ok(notifications[0].message.includes("langgraph-fundamentals"));
+  });
+
+  it("gracefully handles getCommands errors without custom UI", async () => {
+    const commands: Array<{ name: string; handler: Function }> = [];
+    const notifications: Array<{ message: string; severity: string }> = [];
+    const pi = {
+      registerCommand: (name: string, opts: { handler: Function }) => {
+        commands.push({ name, handler: opts.handler });
+      },
+    };
+    const store = {
+      loadIndex: async () => SAMPLE_SKILLS,
+      getProjectName: () => "demo-project",
+    };
+
+    registerSkillsCommand(pi as any, store as any);
+    assert.strictEqual(commands.length, 1);
+
+    await commands[0].handler({}, {
+      hasUI: false,
+      getCommands: () => {
+        throw new Error("command registry unavailable");
+      },
       ui: {
         notify: (message: string, severity: string) => notifications.push({ message, severity }),
       },
@@ -445,6 +630,42 @@ describe("registerSkillsCommand", () => {
     assert.strictEqual(customInvoked, true);
   });
 
+  it("opens custom modal even when getCommands throws", async () => {
+    const commands: Array<{ name: string; handler: Function }> = [];
+    let customInvoked = false;
+    const pi = {
+      registerCommand: (name: string, opts: { handler: Function }) => {
+        commands.push({ name, handler: opts.handler });
+      },
+    };
+    const store = {
+      loadIndex: async () => SAMPLE_SKILLS,
+      getProjectName: () => "demo-project",
+      move: async () => ({ success: true } as SkillResult),
+      delete: async () => ({ success: true } as SkillResult),
+    };
+
+    registerSkillsCommand(pi as any, store as any);
+
+    await commands[0].handler({}, {
+      hasUI: true,
+      getCommands: () => {
+        throw new Error("command registry unavailable");
+      },
+      ui: {
+        custom: async (factory: Function, options: { overlay?: boolean }) => {
+          customInvoked = true;
+          assert.strictEqual(options.overlay, true);
+          return undefined;
+        },
+        confirm: async () => true,
+        notify: () => undefined,
+      },
+    });
+
+    assert.strictEqual(customInvoked, true);
+  });
+
   it("falls back to read-only notify output when custom modal throws", async () => {
     const commands: Array<{ name: string; handler: Function }> = [];
     const notifications: Array<{ message: string; severity: string }> = [];
@@ -464,6 +685,44 @@ describe("registerSkillsCommand", () => {
 
     await commands[0].handler({}, {
       hasUI: true,
+      ui: {
+        custom: async () => {
+          throw new Error("UI backend unavailable");
+        },
+        confirm: async () => true,
+        notify: (message: string, severity: string) => notifications.push({ message, severity }),
+      },
+    });
+
+    assert.strictEqual(notifications.length, 2);
+    assert.strictEqual(notifications[0].severity, "warning");
+    assert.ok(notifications[0].message.includes("read-only list fallback"));
+    assert.strictEqual(notifications[1].severity, "info");
+    assert.ok(notifications[1].message.includes("Procedural Skills"));
+  });
+
+  it("falls back to read-only list when both custom modal and getCommands fail", async () => {
+    const commands: Array<{ name: string; handler: Function }> = [];
+    const notifications: Array<{ message: string; severity: string }> = [];
+    const pi = {
+      registerCommand: (name: string, opts: { handler: Function }) => {
+        commands.push({ name, handler: opts.handler });
+      },
+    };
+    const store = {
+      loadIndex: async () => SAMPLE_SKILLS,
+      getProjectName: () => "demo-project",
+      move: async () => ({ success: true } as SkillResult),
+      delete: async () => ({ success: true } as SkillResult),
+    };
+
+    registerSkillsCommand(pi as any, store as any);
+
+    await commands[0].handler({}, {
+      hasUI: true,
+      getCommands: () => {
+        throw new Error("command registry unavailable");
+      },
       ui: {
         custom: async () => {
           throw new Error("UI backend unavailable");

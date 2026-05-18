@@ -13,6 +13,7 @@ let ROOT_DIR = "";
 let GLOBAL_SKILLS_DIR = "";
 let PROJECT_SKILLS_DIR = "";
 let LEGACY_SKILLS_DIR = "";
+let LEGACY_PI_GLOBAL_SKILLS_DIR = "";
 let MIGRATION_SENTINEL = "";
 
 async function makeStore(withProject = true): Promise<SkillStore> {
@@ -21,6 +22,7 @@ async function makeStore(withProject = true): Promise<SkillStore> {
     projectSkillsDir: withProject ? PROJECT_SKILLS_DIR : null,
     projectName: withProject ? "demo-project" : null,
     legacySkillsDir: LEGACY_SKILLS_DIR,
+    legacyPiGlobalSkillsDir: LEGACY_PI_GLOBAL_SKILLS_DIR,
     migrationSentinelPath: MIGRATION_SENTINEL,
   });
 }
@@ -34,6 +36,7 @@ async function cleanSlate(): Promise<void> {
   await fs.mkdir(GLOBAL_SKILLS_DIR, { recursive: true });
   await fs.mkdir(PROJECT_SKILLS_DIR, { recursive: true });
   await fs.mkdir(LEGACY_SKILLS_DIR, { recursive: true });
+  await fs.mkdir(LEGACY_PI_GLOBAL_SKILLS_DIR, { recursive: true });
 }
 
 async function readFile(filePath: string): Promise<string> {
@@ -46,6 +49,7 @@ describe("SkillStore", { concurrency: 1 }, () => {
     GLOBAL_SKILLS_DIR = path.join(ROOT_DIR, "global-skills");
     PROJECT_SKILLS_DIR = path.join(ROOT_DIR, "project-skills");
     LEGACY_SKILLS_DIR = path.join(ROOT_DIR, "legacy-skills");
+    LEGACY_PI_GLOBAL_SKILLS_DIR = path.join(ROOT_DIR, "legacy-pi-global-skills");
     MIGRATION_SENTINEL = path.join(ROOT_DIR, ".skill-migration");
   });
 
@@ -477,6 +481,24 @@ describe("SkillStore", { concurrency: 1 }, () => {
       const raw = await readFile(path.join(existingDir, "SKILL.md"));
       assert.ok(raw.includes("Existing global skill"));
       assert.ok(!raw.includes("Legacy version"));
+    });
+
+    it("migrates flat markdown files under global skills root into SKILL.md folders", async () => {
+      await fs.writeFile(path.join(GLOBAL_SKILLS_DIR, "flat-legacy.md"), [
+        "---",
+        "name: flat-legacy",
+        "description: Flat legacy skill",
+        "---",
+        "# Flat Body",
+      ].join("\n"), "utf-8");
+
+      const store = await makeStore();
+      const result = await store.migrateLegacySkills();
+
+      assert.strictEqual(result.migrated, 1);
+      await assert.rejects(fs.access(path.join(GLOBAL_SKILLS_DIR, "flat-legacy.md")));
+      const migrated = await readFile(path.join(GLOBAL_SKILLS_DIR, "flat-legacy", "SKILL.md"));
+      assert.ok(migrated.includes("description: Flat legacy skill"));
     });
 
     it("does not write the sentinel when warnings occur, so migration can retry", async () => {

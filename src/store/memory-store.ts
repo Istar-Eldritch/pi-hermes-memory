@@ -46,7 +46,7 @@ export class MemoryStore {
   // ─── Path helpers ───
 
   private get memoryDir(): string {
-    return this.config.memoryDir ?? path.join(os.homedir(), ".pi", "agent", "memory");
+    return this.config.memoryDir ?? path.join(os.homedir(), ".pi", "agent", "pi-hermes-memory");
   }
 
   private pathFor(target: "memory" | "user" | "failure"): string {

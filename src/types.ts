@@ -40,7 +40,7 @@ export interface MemoryConfig {
   flushMinTurns: number;
   /** Recent conversation messages included in session flush. 0 = all. Default: 0 */
   flushRecentMessages?: number;
-  /** Override memory directory. Default: ~/.pi/agent/memory */
+  /** Override extension storage directory. Default: ~/.pi/agent/pi-hermes-memory */
   memoryDir?: string;
   /** Directory for project-scoped memory (relative to ~/.pi/agent). Default: "projects-memory" */
   projectsMemoryDir?: string;

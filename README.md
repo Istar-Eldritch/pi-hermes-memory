@@ -103,7 +103,7 @@ The extension stores memory at two levels:
 
 | Tier | Location | What goes here | Available when |
 |---|---|---|---|
-| **Global** | `~/.pi/agent/memory/` | Facts that apply everywhere — your name, preferences, OS, tools | Searchable via `memory_search` |
+| **Global** | `~/.pi/agent/pi-hermes-memory/` | Facts that apply everywhere — your name, preferences, OS, tools | Searchable via `memory_search` |
 | **Project** | `~/.pi/agent/projects-memory/<project>/` | Facts scoped to one codebase — architecture decisions, API quirks, team norms | Searchable when cwd matches the project |
 
 By default, full Markdown memories are **not** injected into the system prompt. The system prompt gets a full-detail `<memory-policy>` that tells the agent when to call `memory_search` and how to treat memory results. This keeps first-turn token usage low while preserving access to user, project, failure, correction, insight, preference, convention, and tool-quirk memories.
@@ -185,7 +185,7 @@ The agent also gets a `skill` tool for saving reusable procedures:
 
 Skills are stored in Pi-native locations:
 
-- Global skills: `~/.pi/agent/skills/<slug>/SKILL.md`
+- Global skills: `~/.pi/agent/pi-hermes-memory/skills/<slug>/SKILL.md`
 - Project skills: `~/.pi/agent/projects-memory/<project>/skills/<slug>/SKILL.md`
 
 The extension classifies new skills automatically:
@@ -241,7 +241,7 @@ This lets Pi discover project skills as native skills without copying them into 
 |---|---|---|---|
 | **memory** | `MEMORY.md` | Agent's notes — env facts, project conventions, tool quirks, lessons learned | 5,000 chars |
 | **user** | `USER.md` | User profile — name, preferences, communication style, habits | 5,000 chars |
-| **skills** | `~/.pi/agent/skills/<slug>/SKILL.md` or `projects-memory/<project>/skills/<slug>/SKILL.md` | Procedures — *how* to debug, deploy, test, or fix something | Unlimited |
+| **skills** | `~/.pi/agent/pi-hermes-memory/skills/<slug>/SKILL.md` or `projects-memory/<project>/skills/<slug>/SKILL.md` | Procedures — *how* to debug, deploy, test, or fix something | Unlimited |
 | **extended** | `sessions.db` | Searchable memories beyond the core limit | Unlimited |
 | **sessions** | `sessions.db` | Past conversation history (searchable via FTS5) | Unlimited |
 
@@ -392,7 +392,7 @@ Create `~/.pi/agent/hermes-memory-config.json`:
   "memoryCharLimit": 5000,
   "userCharLimit": 5000,
   "projectCharLimit": 5000,
-  "memoryDir": "~/.pi/agent/memory",
+  "memoryDir": "~/.pi/agent/pi-hermes-memory",
   "projectsMemoryDir": "projects-memory",
   "sessionSearch": { "variant": "legacy" },
   "nudgeInterval": 10,
@@ -421,7 +421,7 @@ Create `~/.pi/agent/hermes-memory-config.json`:
 | `memoryCharLimit` | `5000` | Max characters in MEMORY.md |
 | `userCharLimit` | `5000` | Max characters in USER.md |
 | `projectCharLimit` | `5000` | Max characters in project-scoped MEMORY.md |
-| `memoryDir` | `~/.pi/agent/memory` | Custom directory for memory files |
+| `memoryDir` | `~/.pi/agent/pi-hermes-memory` | Custom directory for extension storage files |
 | `projectsMemoryDir` | `projects-memory` | Subdirectory under `~/.pi/agent/` for project-scoped memory |
 | `sessionSearch` | `{ "variant": "legacy" }` | Session search implementation: `legacy` keeps the existing SQLite/FTS snippet search; `anchors` uses the opt-in Markdown request surface and returns compact JSONL line-range anchors from `~/.pi/agent/sessions/` |
 | `nudgeInterval` | `10` | Turns between auto-reviews |
@@ -448,11 +448,16 @@ Create `~/.pi/agent/hermes-memory-config.json`:
 
 ```
 ~/.pi/agent/
-├── skills/                ← Global Pi-native skills
-│   ├── debug-typescript-errors/
-│   │   └── SKILL.md
-│   └── testing-checklist/
-│       └── SKILL.md
+├── pi-hermes-memory/      ← Global extension storage root
+│   ├── MEMORY.md          ← Agent's personal notes (env facts, patterns, lessons)
+│   ├── USER.md            ← User profile (name, preferences, habits)
+│   ├── sessions.db        ← SQLite database (session history + extended memory)
+│   ├── skills/            ← Global extension-managed skills
+│   │   ├── debug-typescript-errors/
+│   │   │   └── SKILL.md
+│   │   └── testing-checklist/
+│   │       └── SKILL.md
+│   └── .skills-migrated-to-extension-storage
 ├── projects-memory/       ← ALL project-scoped memories (one subfolder per project)
 │   ├── my-project/
 │   │   ├── MEMORY.md
@@ -461,11 +466,6 @@ Create `~/.pi/agent/hermes-memory-config.json`:
 │   │           └── SKILL.md
 │   └── another-project/
 │       └── MEMORY.md
-├── memory/                ← Global memory
-│   ├── MEMORY.md          ← Agent's personal notes (env facts, patterns, lessons)
-│   ├── USER.md            ← User profile (name, preferences, habits)
-│   ├── sessions.db        ← SQLite database (session history + extended memory)
-│   └── .skills-migrated-to-pi-native
 ├── hermes-memory-config.json
 └── ...
 ```
@@ -486,7 +486,7 @@ The `sessions.db` SQLite database stores session history and extended memory ent
 - **System prompts are invisible**: Pi's TUI does not display the system prompt. Use `/memory-preview-context` to inspect whether policy-only or legacy memory injection is active.
 - **Project skill visibility depends on Pi discovery cycles**: project skills are exposed through `resources_discover` using the active project's `skills/` path. If a moved or newly created project skill doesn't show up immediately in a running session, trigger a reload/new session so Pi refreshes discovered resources.
 - **Project move requires active project context**: in `/memory-skills`, the `p` hotkey is disabled when Pi is not currently in a detected project directory.
-- **Skills are agent-generated**: Skills are created by the agent based on its experience. They may not always be perfectly structured. You can move, delete, or still edit them directly in `~/.pi/agent/skills/` or the active project's `skills/` folder.
+- **Skills are agent-generated**: Skills are created by the agent based on its experience. They may not always be perfectly structured. You can move, delete, or still edit them directly in `~/.pi/agent/pi-hermes-memory/skills/` or the active project's `skills/` folder.
 
 ## Architecture
 

@@ -26,9 +26,10 @@ describe("resources_discover skill path resolution", () => {
     assert.ok(typeof handlers.resources_discover === "function");
 
     const result = await handlers.resources_discover({ cwd: "/tmp/demo-repo" }, {});
+    const expectedGlobal = "/tmp/global-skills";
     const expectedPath = path.join(os.homedir(), ".pi", "agent", "projects-memory", "demo-repo", "skills");
 
-    assert.deepStrictEqual(result, { skillPaths: [expectedPath] });
+    assert.deepStrictEqual(result, { skillPaths: [expectedGlobal, expectedPath] });
   });
 
   it("returns project skillPaths and updates skill store context", () => {
@@ -44,12 +45,12 @@ describe("resources_discover skill path resolution", () => {
     const resource = resolveProjectSkillDiscovery(store, "projects-memory", cwd);
     const expectedPath = path.join(os.homedir(), ".pi", "agent", "projects-memory", "demo-repo", "skills");
 
-    assert.deepStrictEqual(resource, { skillPaths: [expectedPath] });
+    assert.deepStrictEqual(resource, { skillPaths: ["/tmp/global-skills", expectedPath] });
     assert.strictEqual(store.getProjectName(), "demo-repo");
     assert.strictEqual(store.getProjectSkillsDir(), expectedPath);
   });
 
-  it("returns undefined when cwd is not a project", () => {
+  it("returns global skill path when cwd is not a project", () => {
     const store = new SkillStore({
       globalSkillsDir: "/tmp/global-skills",
       projectSkillsDir: "/tmp/old-project",
@@ -60,7 +61,7 @@ describe("resources_discover skill path resolution", () => {
 
     const resource = resolveProjectSkillDiscovery(store, "projects-memory", os.homedir());
 
-    assert.strictEqual(resource, undefined);
+    assert.deepStrictEqual(resource, { skillPaths: ["/tmp/global-skills"] });
     assert.strictEqual(store.getProjectName(), null);
     assert.strictEqual(store.getProjectSkillsDir(), null);
   });
