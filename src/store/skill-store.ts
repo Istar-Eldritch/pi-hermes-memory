@@ -98,6 +98,7 @@ export class SkillStore {
 
     try {
       await this.migrateLegacyMarkdownSkills(result);
+      await this.migrateFlatMarkdownInGlobalSkillsDir(result);
       await this.migrateLegacyPiGlobalSkillDirs(result);
     } finally {
       if (result.warnings.length === 0) {
@@ -145,6 +146,52 @@ export class SkillStore {
 
         await fs.mkdir(path.dirname(targetPath), { recursive: true });
         await this.atomicWrite(targetPath, formatFrontmatter(skillDoc));
+        result.migrated++;
+      } catch (error) {
+        result.warnings.push(`${file}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  private async migrateFlatMarkdownInGlobalSkillsDir(result: LegacySkillMigrationResult): Promise<void> {
+    if (!await exists(this.globalSkillsDir)) return;
+
+    const files = (await fs.readdir(this.globalSkillsDir))
+      .filter((file) => file.endsWith(".md") && file !== "SKILL.md")
+      .sort();
+
+    for (const file of files) {
+      const legacyPath = path.join(this.globalSkillsDir, file);
+      try {
+        const raw = await fs.readFile(legacyPath, "utf-8");
+        const parsed = parseFrontmatter(raw);
+        const fallbackSlug = slugify(path.basename(file, ".md"));
+        const slug = slugify(parsed.meta.name || fallbackSlug);
+        if (!slug) {
+          result.skipped++;
+          continue;
+        }
+
+        const targetPath = path.join(this.globalSkillsDir, slug, "SKILL.md");
+        if (await exists(targetPath)) {
+          await fs.rm(legacyPath, { force: true });
+          result.skipped++;
+          continue;
+        }
+
+        const skillDoc = {
+          name: slug,
+          displayName: parsed.meta.display_name?.trim() || parsed.meta.name?.trim() || undefined,
+          description: parsed.meta.description?.trim() || `Migrated legacy skill: ${slug}`,
+          version: Number.parseInt(parsed.meta.version || "1", 10) || 1,
+          created: parsed.meta.created || today(),
+          updated: parsed.meta.updated || today(),
+          body: parsed.body || `# ${slug}\n`,
+        };
+
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await this.atomicWrite(targetPath, formatFrontmatter(skillDoc));
+        await fs.rm(legacyPath, { force: true });
         result.migrated++;
       } catch (error) {
         result.warnings.push(`${file}: ${error instanceof Error ? error.message : String(error)}`);

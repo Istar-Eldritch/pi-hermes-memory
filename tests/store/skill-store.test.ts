@@ -483,6 +483,24 @@ describe("SkillStore", { concurrency: 1 }, () => {
       assert.ok(!raw.includes("Legacy version"));
     });
 
+    it("migrates flat markdown files under global skills root into SKILL.md folders", async () => {
+      await fs.writeFile(path.join(GLOBAL_SKILLS_DIR, "flat-legacy.md"), [
+        "---",
+        "name: flat-legacy",
+        "description: Flat legacy skill",
+        "---",
+        "# Flat Body",
+      ].join("\n"), "utf-8");
+
+      const store = await makeStore();
+      const result = await store.migrateLegacySkills();
+
+      assert.strictEqual(result.migrated, 1);
+      await assert.rejects(fs.access(path.join(GLOBAL_SKILLS_DIR, "flat-legacy.md")));
+      const migrated = await readFile(path.join(GLOBAL_SKILLS_DIR, "flat-legacy", "SKILL.md"));
+      assert.ok(migrated.includes("description: Flat legacy skill"));
+    });
+
     it("does not write the sentinel when warnings occur, so migration can retry", async () => {
       await fs.mkdir(path.join(LEGACY_SKILLS_DIR, "broken.md"), { recursive: true });
       const legacyFile = path.join(LEGACY_SKILLS_DIR, "legacy-skill.md");
