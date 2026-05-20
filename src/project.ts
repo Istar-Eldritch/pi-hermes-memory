@@ -5,6 +5,7 @@
 
 import * as path from "node:path";
 import * as os from "node:os";
+import { resolveProjectsRoot } from "./paths.js";
 
 export interface ProjectInfo {
   /** Project name (directory basename), or null if not in a project. */
@@ -44,7 +45,7 @@ export function detectProject(projectsMemoryDir = "projects-memory", cwd?: strin
 
   return {
     name,
-    memoryDir: path.join(homeDir, ".pi", "agent", projectsMemoryDir, name),
+    memoryDir: path.join(resolveProjectsRoot(projectsMemoryDir), name),
   };
 }
 

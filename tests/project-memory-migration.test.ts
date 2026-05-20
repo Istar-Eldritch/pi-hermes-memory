@@ -9,13 +9,10 @@ import { migrateLegacyProjectMemoryDirs } from "../src/project-memory-migration.
 describe("migrateLegacyProjectMemoryDirs", () => {
   let tmpDir: string;
   let agentRoot: string;
-  let globalDir: string;
-
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "project-memory-migration-test-"));
     agentRoot = path.join(tmpDir, "agent");
-    globalDir = path.join(agentRoot, "memory");
-    fs.mkdirSync(globalDir, { recursive: true });
+    fs.mkdirSync(agentRoot, { recursive: true });
   });
 
   afterEach(() => {
@@ -28,7 +25,7 @@ describe("migrateLegacyProjectMemoryDirs", () => {
     fs.mkdirSync(legacyDir, { recursive: true });
     fs.writeFileSync(legacyFile, "legacy project memory", "utf-8");
 
-    const result = migrateLegacyProjectMemoryDirs(globalDir);
+    const result = migrateLegacyProjectMemoryDirs(agentRoot);
 
     const migratedFile = path.join(agentRoot, "projects-memory", "project-a", "MEMORY.md");
     assert.strictEqual(fs.readFileSync(migratedFile, "utf-8"), "legacy project memory");
@@ -56,7 +53,7 @@ describe("migrateLegacyProjectMemoryDirs", () => {
       "utf-8",
     );
 
-    const result = migrateLegacyProjectMemoryDirs(globalDir);
+    const result = migrateLegacyProjectMemoryDirs(agentRoot);
     const merged = fs.readFileSync(path.join(migratedDir, "MEMORY.md"), "utf-8");
 
     assert.deepStrictEqual(merged.split(ENTRY_DELIMITER), ["shared", "new only", "legacy only"]);
@@ -67,11 +64,13 @@ describe("migrateLegacyProjectMemoryDirs", () => {
   });
 
   it("skips global memory and the new projects-memory directory", () => {
+    const globalDir = path.join(agentRoot, "memory");
+    fs.mkdirSync(globalDir, { recursive: true });
     fs.writeFileSync(path.join(globalDir, "MEMORY.md"), "global memory", "utf-8");
     fs.mkdirSync(path.join(agentRoot, "projects-memory", "project-a"), { recursive: true });
     fs.writeFileSync(path.join(agentRoot, "projects-memory", "project-a", "MEMORY.md"), "new memory", "utf-8");
 
-    const result = migrateLegacyProjectMemoryDirs(globalDir);
+    const result = migrateLegacyProjectMemoryDirs(agentRoot);
 
     assert.deepStrictEqual(
       { scanned: result.scanned, copied: result.copied, merged: result.merged, skipped: result.skipped },

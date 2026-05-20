@@ -16,6 +16,7 @@ import {
   DEFAULT_FAILURE_INJECTION_MAX_AGE_DAYS,
   DEFAULT_FAILURE_INJECTION_MAX_ENTRIES,
 } from "./constants.js";
+import { normalizeConfiguredMemoryDir, normalizeProjectsMemoryDir } from "./paths.js";
 
 const MEMORY_OVERFLOW_STRATEGIES: readonly MemoryOverflowStrategy[] = ["auto-consolidate", "reject", "fifo-evict"];
 const SESSION_SEARCH_VARIANTS: readonly SessionSearchVariant[] = ["legacy", "anchors"];
@@ -111,8 +112,14 @@ export function loadConfig(configPath = DEFAULT_CONFIG_PATH): MemoryConfig {
       if (typeof parsed.failureInjectionMaxEntries === "number") config.failureInjectionMaxEntries = parsed.failureInjectionMaxEntries;
       if (typeof parsed.nudgeToolCalls === "number") config.nudgeToolCalls = parsed.nudgeToolCalls;
       if (typeof parsed.projectCharLimit === "number") config.projectCharLimit = parsed.projectCharLimit;
-      if (typeof parsed.memoryDir === "string") config.memoryDir = parsed.memoryDir;
-      if (typeof parsed.projectsMemoryDir === "string") config.projectsMemoryDir = parsed.projectsMemoryDir;
+      if (typeof parsed.memoryDir === "string") {
+        const normalizedMemoryDir = normalizeConfiguredMemoryDir(parsed.memoryDir);
+        if (normalizedMemoryDir) config.memoryDir = normalizedMemoryDir;
+      }
+      if (typeof parsed.projectsMemoryDir === "string") {
+        const normalizedProjectsMemoryDir = normalizeProjectsMemoryDir(parsed.projectsMemoryDir);
+        if (normalizedProjectsMemoryDir) config.projectsMemoryDir = normalizedProjectsMemoryDir;
+      }
       if (
         typeof parsed.sessionSearch === "object" &&
         parsed.sessionSearch !== null &&

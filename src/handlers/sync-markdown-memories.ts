@@ -12,6 +12,7 @@ import {
   syncMemoryEntry,
 } from '../store/sqlite-memory-store.js';
 import { ENTRY_DELIMITER, MEMORY_FILE, USER_FILE } from '../constants.js';
+import { AGENT_ROOT } from '../paths.js';
 
 export interface BackfillCounters {
   filesScanned: number;
@@ -64,10 +65,14 @@ function scanProjectDirs(agentRoot: string, globalDir: string, projectsMemoryDir
     }
   }
 
-  const globalDirName = path.basename(globalDir);
+  const resolvedAgentRoot = path.resolve(agentRoot);
+  const resolvedGlobalDir = path.resolve(globalDir);
+  const globalDirName = path.dirname(resolvedGlobalDir) === resolvedAgentRoot
+    ? path.basename(resolvedGlobalDir)
+    : null;
   if (fs.existsSync(agentRoot)) {
     for (const name of fs.readdirSync(agentRoot)) {
-      if (name === globalDirName || name === projectsMemoryDir || name === 'skills' || name.startsWith('.')) continue;
+      if ((globalDirName && name === globalDirName) || name === projectsMemoryDir || name === 'skills' || name.startsWith('.')) continue;
       if (projects.has(name)) continue;
       const dir = path.join(agentRoot, name);
       const memoryFile = path.join(dir, MEMORY_FILE);
@@ -86,6 +91,7 @@ export function syncMarkdownMemoriesToSqlite(
   dbManager: DatabaseManager,
   globalDir: string,
   projectsMemoryDir?: string,
+  agentRoot = AGENT_ROOT,
 ): BackfillCounters & { projectCount: number } {
   const counters: BackfillCounters = {
     filesScanned: 0,
@@ -114,7 +120,6 @@ export function syncMarkdownMemoriesToSqlite(
   importFile(globalUserFile, 'user');
   importFile(globalFailureFile, 'failure');
 
-  const agentRoot = path.dirname(globalDir);
   const projects = scanProjectDirs(agentRoot, globalDir, projectsMemoryDir);
   for (const project of projects) {
     importFile(project.memoryFile, 'memory', project.name);
@@ -128,6 +133,7 @@ export function registerSyncMarkdownMemoriesCommand(
   dbManager: DatabaseManager,
   globalDir: string,
   projectsMemoryDir?: string,
+  agentRoot = AGENT_ROOT,
 ): void {
   pi.registerCommand('memory-sync-markdown', {
     description: 'Backfill Markdown memories into the SQLite search store',
@@ -135,7 +141,7 @@ export function registerSyncMarkdownMemoriesCommand(
       ctx.ui.notify('🔄 Scanning Markdown memory files for SQLite backfill...', 'info');
 
       try {
-        const counters = syncMarkdownMemoriesToSqlite(dbManager, globalDir, projectsMemoryDir);
+        const counters = syncMarkdownMemoriesToSqlite(dbManager, globalDir, projectsMemoryDir, agentRoot);
 
         let output = `\n✅ Markdown → SQLite sync complete!\n\n`;
         output += `📊 Results:\n`;

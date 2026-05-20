@@ -23,7 +23,6 @@
  */
 
 import * as path from "node:path";
-import * as os from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { MemoryStore } from "./store/memory-store.js";
 import { SkillStore } from "./store/skill-store.js";
@@ -52,6 +51,7 @@ import { detectProject, detectProjectSkills } from "./project.js";
 import { buildPromptContext } from "./prompt-context.js";
 import { migrateLegacyProjectMemoryDirs } from "./project-memory-migration.js";
 import { migrateExtensionRoot } from "./extension-root-migration.js";
+import { AGENT_ROOT } from "./paths.js";
 
 export function resolveProjectSkillDiscovery(
   skillStore: SkillStore,
@@ -80,7 +80,7 @@ export function registerProjectSkillDiscoveryHandler(
 export default function (pi: ExtensionAPI) {
   const config = loadConfig();
 
-  const agentRoot = path.join(os.homedir(), ".pi", "agent");
+  const agentRoot = AGENT_ROOT;
   const legacyGlobalDir = path.join(agentRoot, "memory");
   const defaultGlobalDir = path.join(agentRoot, "pi-hermes-memory");
 
@@ -121,9 +121,9 @@ export default function (pi: ExtensionAPI) {
   // Keep project memory available for users upgrading from the old
   // ~/.pi/agent/<project>/ layout. This is non-destructive: legacy folders
   // remain in place while entries are copied/merged into projects-memory/.
-  migrateLegacyProjectMemoryDirs(globalDir, config.projectsMemoryDir);
+  migrateLegacyProjectMemoryDirs(agentRoot, config.projectsMemoryDir);
   try {
-    syncMarkdownMemoriesToSqlite(dbManager, globalDir, config.projectsMemoryDir);
+    syncMarkdownMemoriesToSqlite(dbManager, globalDir, config.projectsMemoryDir, agentRoot);
   } catch {
     // Best-effort only: failed SQLite backfill should not block extension startup.
   }
@@ -196,7 +196,7 @@ export default function (pi: ExtensionAPI) {
   registerInterviewCommand(pi, store);
   registerSwitchProjectCommand(pi, config);
   registerLearnMemoryCommand(pi);
-  registerSyncMarkdownMemoriesCommand(pi, dbManager, globalDir, config.projectsMemoryDir);
+  registerSyncMarkdownMemoriesCommand(pi, dbManager, globalDir, config.projectsMemoryDir, agentRoot);
   registerPreviewContextCommand(pi, store, projectStore, projectName, config);
 
   // ── 11. SQLite session search + extended memory ──

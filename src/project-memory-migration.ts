@@ -31,7 +31,7 @@ function isLegacyProjectDir(agentRoot: string, projectsMemoryDir: string, name: 
 }
 
 export function migrateLegacyProjectMemoryDirs(
-  globalDir: string,
+  agentRoot: string,
   projectsMemoryDir = "projects-memory",
 ): ProjectMemoryMigrationResult {
   const result: ProjectMemoryMigrationResult = {
@@ -42,7 +42,6 @@ export function migrateLegacyProjectMemoryDirs(
     warnings: [],
   };
 
-  const agentRoot = path.dirname(globalDir);
   if (!fs.existsSync(agentRoot)) return result;
 
   const projectsRoot = path.join(agentRoot, projectsMemoryDir);

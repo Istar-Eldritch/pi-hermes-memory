@@ -106,7 +106,7 @@ describe('memory sqlite sync + markdown backfill', () => {
       },
     } as any;
 
-    registerSyncMarkdownMemoriesCommand(mockPi, dbManager, globalDir);
+    registerSyncMarkdownMemoriesCommand(mockPi, dbManager, globalDir, undefined, agentRoot);
 
     await handler({}, ctx);
     const afterFirst = getMemories(dbManager);
@@ -151,7 +151,7 @@ describe('memory sqlite sync + markdown backfill', () => {
       },
     } as any;
 
-    registerSyncMarkdownMemoriesCommand(mockPi, dbManager, globalDir);
+    registerSyncMarkdownMemoriesCommand(mockPi, dbManager, globalDir, undefined, agentRoot);
     await handler({}, ctx);
 
     const projectRows = getMemories(dbManager, { project: 'legacy-project', target: 'memory' });
@@ -168,7 +168,7 @@ describe('memory sqlite sync + markdown backfill', () => {
       'utf-8',
     );
 
-    const counters = syncMarkdownMemoriesToSqlite(dbManager, globalDir);
+    const counters = syncMarkdownMemoriesToSqlite(dbManager, globalDir, undefined, agentRoot);
 
     assert.strictEqual(counters.projectCount, 1);
     assert.strictEqual(counters.imported, 1);
@@ -179,5 +179,33 @@ describe('memory sqlite sync + markdown backfill', () => {
     });
     assert.strictEqual(results.length, 1);
     assert.strictEqual(results[0].content, 'latest path searchable entry');
+  });
+
+  it('still scans project markdown under ~/.pi/agent when memoryDir is customized elsewhere', () => {
+    const customGlobalDir = path.join(tmpDir, 'external-memory-root');
+    fs.mkdirSync(customGlobalDir, { recursive: true });
+
+    const customDbManager = new DatabaseManager(customGlobalDir);
+    try {
+      const projectDir = path.join(agentRoot, 'projects-memory', 'custom-root-project');
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(projectDir, 'MEMORY.md'),
+        'custom root project entry <!-- created=2026-05-11, last=2026-05-11 -->',
+        'utf-8',
+      );
+
+      const counters = syncMarkdownMemoriesToSqlite(customDbManager, customGlobalDir, undefined, agentRoot);
+
+      assert.strictEqual(counters.projectCount, 1);
+      const results = searchMemories(customDbManager, 'custom root project entry', {
+        project: 'custom-root-project',
+        target: 'memory',
+      });
+      assert.strictEqual(results.length, 1);
+      assert.strictEqual(results[0].content, 'custom root project entry');
+    } finally {
+      customDbManager.close();
+    }
   });
 });
