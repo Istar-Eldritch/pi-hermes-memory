@@ -70,6 +70,8 @@ export interface MemoryConfig {
   nudgeToolCalls: number;
   /** Maximum time in milliseconds for auto-consolidation to complete. Default: 60000 */
   consolidationTimeoutMs: number;
+  /** Automatically search extended memory before each LLM call and inject results into context. Default: true */
+  autoRetrieval: boolean;
 }
 
 export type MemoryCategory =

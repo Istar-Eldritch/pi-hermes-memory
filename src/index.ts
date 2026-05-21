@@ -44,6 +44,7 @@ import { registerSwitchProjectCommand } from "./handlers/switch-project.js";
 import { registerIndexSessionsCommand } from "./handlers/index-sessions.js";
 import { registerLearnMemoryCommand } from "./handlers/learn-memory.js";
 import { registerSyncMarkdownMemoriesCommand, syncMarkdownMemoriesToSqlite } from "./handlers/sync-markdown-memories.js";
+import { setupAutoRetrieval } from "./handlers/auto-retrieval.js";
 import { registerPreviewContextCommand } from "./handlers/preview-context.js";
 import { loadConfig } from "./config.js";
 import { detectProject, detectProjectSkills } from "./project.js";
@@ -198,9 +199,14 @@ export default function (pi: ExtensionAPI) {
   // ── 10. SQLite session search + extended memory ──
   registerSessionSearchTool(pi, dbManager, config.sessionSearch ?? { variant: "legacy" });
   registerMemorySearchTool(pi, dbManager);
+
+  // ── 11. Auto-retrieval: search extended memory before each LLM call ──
+  if (config.autoRetrieval !== false) {
+    setupAutoRetrieval(pi, dbManager);
+  }
   registerIndexSessionsCommand(pi);
 
-  // ── 11. Auto-index session on shutdown ──
+  // ── 12. Auto-index session on shutdown ──
   pi.on("session_shutdown", async (_event, ctx) => {
     try {
       const sessionFile = ctx.sessionManager.getSessionFile();
