@@ -38,7 +38,6 @@ import { setupSessionFlush } from "./handlers/session-flush.js";
 import { registerInsightsCommand } from "./handlers/insights.js";
 import { triggerConsolidation, registerConsolidateCommand } from "./handlers/auto-consolidate.js";
 import { setupCorrectionDetector } from "./handlers/correction-detector.js";
-import { setupSkillAutoTrigger } from "./handlers/skill-auto-trigger.js";
 import { registerSkillsCommand } from "./handlers/skills-command.js";
 import { registerInterviewCommand } from "./handlers/interview.js";
 import { registerSwitchProjectCommand } from "./handlers/switch-project.js";
@@ -187,10 +186,7 @@ export default function (pi: ExtensionAPI) {
   // ── 8. Setup correction detection ──
   setupCorrectionDetector(pi, store, projectStore, config, dbManager, projectName);
 
-  // ── 9. Setup skill auto-trigger ──
-  setupSkillAutoTrigger(pi, store, skillStore, config);
-
-  // ── 10. Register commands ──
+  // ── 9. Register commands ──
   registerInsightsCommand(pi, store, projectStore, projectName);
   registerSkillsCommand(pi, skillStore);
   registerInterviewCommand(pi, store);
@@ -199,12 +195,12 @@ export default function (pi: ExtensionAPI) {
   registerSyncMarkdownMemoriesCommand(pi, dbManager, globalDir, config.projectsMemoryDir, agentRoot);
   registerPreviewContextCommand(pi, store, projectStore, projectName, config);
 
-  // ── 11. SQLite session search + extended memory ──
+  // ── 10. SQLite session search + extended memory ──
   registerSessionSearchTool(pi, dbManager, config.sessionSearch ?? { variant: "legacy" });
   registerMemorySearchTool(pi, dbManager);
   registerIndexSessionsCommand(pi);
 
-  // ── 12. Auto-index session on shutdown ──
+  // ── 11. Auto-index session on shutdown ──
   pi.on("session_shutdown", async (_event, ctx) => {
     try {
       const sessionFile = ctx.sessionManager.getSessionFile();

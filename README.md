@@ -172,7 +172,7 @@ Memory blocks are wrapped in `<memory-context>` XML tags with a guard note ("NOT
 
 ## Usage
 
-Once installed, the extension works automatically. You don't need to do anything special — the agent will start saving memories and skills on its own.
+Once installed, the extension works automatically for durable memory. Skills are available through the `skill` tool during normal work when the agent decides a reusable procedure is worth saving.
 
 ### The `memory` Tool
 
@@ -190,10 +190,10 @@ The agent also gets a `skill` tool for saving reusable procedures:
 
 | Action | What it does |
 |---|---|
-| `create` | Save a new skill (name, description, step-by-step body, optional `scope`) |
+| `create` | Save a new skill (name, description, step-by-step body, required `scope`) |
 | `view` | Read a skill's full content by `skill_id`, or list all skills if no id is given |
 | `patch` | Update one section of an existing skill by `skill_id` |
-| `edit` | Replace the description and/or full body of a skill by `skill_id` |
+| `update` | Replace the description and/or full body of a skill by `skill_id` |
 | `delete` | Remove a skill by `skill_id` |
 
 Skills are stored in Pi-native locations:
@@ -201,14 +201,25 @@ Skills are stored in Pi-native locations:
 - Global skills: `~/.pi/agent/pi-hermes-memory/skills/<slug>/SKILL.md`
 - Project skills: `~/.pi/agent/projects-memory/<project>/skills/<slug>/SKILL.md`
 
-The extension classifies new skills automatically:
+New skills must choose scope explicitly:
 
 - `global` for transferable procedures
 - `project` for repo-specific workflows tied to local paths, scripts, architecture, deploy steps, or conventions
 
+The agent should use the skill tool inline during normal work, not via a background auto-extraction pass. That keeps skill creation deliberate and lets the active model choose whether to create, patch, update, or skip.
+
+For `create` and `update`, the preferred shape is structured input instead of hand-written markdown:
+
+- `when_to_use`
+- `procedure_steps`
+- `pitfalls`
+- `verification_steps`
+
+The tool renders these into a valid `SKILL.md` body with `## When to Use`, `## Procedure`, `## Pitfalls`, and `## Verification` automatically. Raw `content` is still supported for compatibility, but structured fields are the recommended path.
+
 Global skill creation also has duplicate/similarity guards:
 
-- exact slug match → blocked (update existing via `patch`/`edit`)
+- exact slug match → blocked (update existing via `patch`/`update`)
 - near-name + high description similarity → blocked as similar (enhance existing)
 - near-name + low description similarity → blocked as name collision (rename to a clearer distinct skill name)
 
@@ -492,14 +503,14 @@ The `sessions.db` SQLite database stores session history and extended memory ent
 ## Known Limitations
 
 - **`§` delimiter**: Memory entries are separated by `§` (section sign). If an entry naturally contains `§`, it will be split incorrectly on reload. This is rare in English text but possible. [Hermes uses the same delimiter.]
-- **Background review cost**: Each review cycle costs one full LLM API call via a child `pi -p` process. Correction detection and skill auto-extraction add occasional extra calls.
+- **Background review cost**: Each review cycle costs one full LLM API call via a child `pi -p` process. Correction detection and explicit skill saves can add additional calls when the agent decides they are worth it.
 - **Session search requires indexing**: Past sessions must be indexed before they're searchable. Run `/memory-index-sessions` to bulk-import, or let the extension auto-index on session shutdown.
 - **Older Markdown memories may need backfill**: If you saved memories before the SQLite mirror existed or search looks stale, run `/memory-sync-markdown`.
 - **Core memory limits still apply**: SQLite search mirroring does not bypass the 5,000-char core Markdown limit. If consolidation cannot free space, the write fails instead of becoming SQLite-only memory invisibly.
 - **System prompts are invisible**: Pi's TUI does not display the system prompt. Use `/memory-preview-context` to inspect whether policy-only or legacy memory injection is active.
 - **Project skill visibility depends on Pi discovery cycles**: project skills are exposed through `resources_discover` using the active project's `skills/` path. If a moved or newly created project skill doesn't show up immediately in a running session, trigger a reload/new session so Pi refreshes discovered resources.
 - **Project move requires active project context**: in `/memory-skills`, the `p` hotkey is disabled when Pi is not currently in a detected project directory.
-- **Skills are agent-generated**: Skills are created by the agent based on its experience. They may not always be perfectly structured. You can move, delete, or still edit them directly in `~/.pi/agent/pi-hermes-memory/skills/` or the active project's `skills/` folder.
+- **Skills still need curation**: Skills are saved by the agent through the `skill` tool when it decides a reusable procedure is worth keeping. They may still need review. You can move, delete, or edit them directly in `~/.pi/agent/pi-hermes-memory/skills/` or the active project's `skills/` folder.
 
 ## Architecture
 

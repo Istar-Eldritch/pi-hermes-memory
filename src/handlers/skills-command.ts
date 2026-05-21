@@ -214,8 +214,8 @@ export function formatSkillsList(rows: SkillModalRow[], projectName: string | nu
   if (rows.length === 0) {
     lines.push("  (no skills found in this session)");
     lines.push("");
-    lines.push("  Skills are auto-created after complex tasks,");
-    lines.push("  or you can ask the agent to create one.");
+    lines.push("  Ask the agent to save a reusable procedure");
+    lines.push("  with the skill tool when it is worth keeping.");
     return lines.join("\n");
   }
 

@@ -290,7 +290,7 @@ export class SkillStore {
     if (existing) {
       return {
         success: false,
-        error: `Skill '${slug}' already exists (${skillId}). Use 'patch' or 'edit' to update it.`,
+        error: `Skill '${slug}' already exists (${skillId}). Use 'patch' or 'update' to update it.`,
         conflictType: "duplicate",
         similarSkillIds: [skillId],
         suggestedAction: "patch",
@@ -303,7 +303,7 @@ export class SkillStore {
         const targetId = similarSkillIds[0];
         return {
           success: false,
-          error: `A similar global skill already exists (${targetId}). Enhance the existing skill with new learnings/failures using 'patch' or 'edit' instead of creating a duplicate.`,
+          error: `A similar global skill already exists (${targetId}). Enhance the existing skill with new learnings/failures using 'patch' or 'update' instead of creating a duplicate.`,
           conflictType: "similar",
           similarSkillIds,
           suggestedAction: "patch",
@@ -315,7 +315,7 @@ export class SkillStore {
         const targetId = collidingNameSkillIds[0];
         return {
           success: false,
-          error: `A near-name global skill already exists (${targetId}) but with different intent. Use a clearer differentiated name for the new skill, or patch/edit the existing skill if the intent is actually the same.`,
+          error: `A near-name global skill already exists (${targetId}) but with different intent. Use a clearer differentiated name for the new skill, or patch/update the existing skill if the intent is actually the same.`,
           conflictType: "name-collision",
           similarSkillIds: collidingNameSkillIds,
           suggestedAction: "rename",

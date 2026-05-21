@@ -12,7 +12,6 @@ graph LR
         BR["background-review.ts<br/><i>Learning loop</i>"]
         AC["auto-consolidate.ts<br/><i>Memory merge</i>"]
         CD["correction-detector.ts<br/><i>Instant save</i>"]
-        SA["skill-auto-trigger.ts<br/><i>Skill extraction</i>"]
         SF["session-flush.ts<br/><i>Pre-compaction flush</i>"]
         IN["insights.ts<br/><i>/memory-insights</i>"]
         SC["skills-command.ts<br/><i>/memory-skills</i>"]
@@ -29,7 +28,6 @@ graph LR
     IDX --> BR
     IDX --> AC
     IDX --> CD
-    IDX --> SA
     IDX --> SF
     IDX --> IN
     IDX --> SC
@@ -46,8 +44,6 @@ graph LR
     AC --> MS
     CD --> MS
     CD --> SSM
-    SA --> MS
-    SA --> SS
     SSM --> DB
 
     style IDX fill:#e94560,stroke:#fff,color:#fff

@@ -26,7 +26,9 @@ describe("buildPromptContext", () => {
     assert.match(result, /category filters categorized failure\/lesson memories only/);
     assert.match(result, /Use category only for categorized failure\/lesson searches/);
     assert.match(result, /session_search: search indexed past conversation messages/);
-    assert.match(result, /skill: list, view, create, patch, edit, and delete procedural skills/);
+    assert.match(result, /skill: list, view, create, patch, update, and delete procedural skills/);
+    assert.match(result, /Always pass scope explicitly on create/);
+    assert.match(result, /Do not create skills for one-off task state/);
     assert.doesNotMatch(result, /category="preference"/);
     assert.doesNotMatch(result, /inspect, and update procedural skills/);
     assert.doesNotMatch(result, /memory_search: search relevant user, project, session, failure, and skill memories/);
@@ -56,6 +58,7 @@ describe("buildPromptContext", () => {
 
     assert.strictEqual(result, MEMORY_POLICY_PROMPT_COMPACT);
     assert.match(result, /category filters categorized failure\/lesson memories only/);
+    assert.match(result, /scope is required: global for transferable workflows, project for repo-specific ones/);
     assert.match(result, /Do not use memory_search for generic questions/);
     assert.doesNotMatch(result, /MEMORY<\/memory-context>/);
     assert.doesNotMatch(result, /PROJECT demo/);

@@ -170,6 +170,9 @@ describe("setupBackgroundReview", () => {
     const cmdArgs: string[] = execArgs[1];
     assert.ok(cmdArgs[0] === "-p", "should use -p flag");
     assert.ok(cmdArgs.includes("--no-session"), "should include --no-session");
+    const prompt = reviewPrompt(0);
+    assert.match(prompt, /Do NOT create or modify skills in this background review/i);
+    assert.doesNotMatch(prompt, /save a reusable procedure using the skill tool/i);
   });
 
   it("does NOT trigger review when reviewEnabled is false", async () => {
