@@ -618,7 +618,7 @@ export function searchMemories(
   const candidateLimit = temporalDecayHalfLifeDays > 0 ? limit * 3 : limit;
 
   const sql = `
-    SELECT ${MEMORY_SELECT_COLUMNS}, memory_fts.rank AS fts_rank
+    SELECT m.id, m.project, m.target, m.category, m.content, m.failure_reason, m.tool_state, m.corrected_to, m.created, m.last_referenced, memory_fts.rank AS fts_rank
     FROM memory_fts
     JOIN memories m ON m.id = memory_fts.rowid
     ${whereClause}

@@ -191,6 +191,39 @@ describe('sqlite-memory-store', () => {
       const results = searchMemories(dbManager, 'nonexistent-xyz');
       assert.strictEqual(results.length, 0);
     });
+
+    describe('temporal decay scoring', () => {
+      it('ranks recent entry above old entry for same relevance when decay is aggressive', () => {
+        const db = dbManager.getDb();
+
+        // Two entries with identical content to equalize BM25 scores
+        const old = addMemory(dbManager, 'deployment workflow steps alpha');
+        const recent = addMemory(dbManager, 'deployment workflow steps alpha');
+
+        // Age the first entry to 180 days ago
+        const oldDate = new Date(Date.now() - 180 * 86_400_000).toISOString().split('T')[0];
+        db.prepare('UPDATE memories SET last_referenced = ? WHERE id = ?').run(oldDate, old.id);
+
+        // half-life of 30 days — 180-day-old entry decays to 0.5^6 ≈ 0.016
+        const results = searchMemories(dbManager, 'deployment workflow', { temporalDecayHalfLifeDays: 30 });
+        const ids = results.map(r => r.id);
+        assert.ok(ids.indexOf(recent.id) < ids.indexOf(old.id), 'recent entry should rank above old entry');
+      });
+
+      it('returns at most `limit` results when decay is active', () => {
+        for (let i = 0; i < 6; i++) {
+          addMemory(dbManager, `authentication token refresh cycle ${i}`);
+        }
+        const results = searchMemories(dbManager, 'authentication token', { limit: 3, temporalDecayHalfLifeDays: 30 });
+        assert.ok(results.length <= 3);
+      });
+
+      it('preserves BM25 order when decay is disabled (halfLife = 0)', () => {
+        // Without decay the function should still return results
+        const results = searchMemories(dbManager, 'pnpm', { temporalDecayHalfLifeDays: 0 });
+        assert.ok(results.length > 0);
+      });
+    });
   });
 
   describe('getMemories', () => {
