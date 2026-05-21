@@ -583,13 +583,13 @@ export function searchMemories(
   options: { project?: string; target?: string; category?: MemoryCategory; limit?: number; temporalDecayHalfLifeDays?: number } = {}
 ): SqliteMemoryEntry[] {
   const db = dbManager.getDb();
-  const { project, target, category, limit = 10 } = options;
+  const { project, target, category, limit = 10, temporalDecayHalfLifeDays = 0 } = options;
 
   const conditions: string[] = [];
   const params: unknown[] = [];
 
-  // FTS5 match via subquery with escaped query
-  conditions.push('m.id IN (SELECT rowid FROM memory_fts WHERE memory_fts MATCH ?)');
+  // JOIN with memory_fts to expose the BM25 rank for scoring
+  conditions.push('memory_fts MATCH ?');
   params.push(escapeFts5Query(query));
 
   if (project !== undefined) {
@@ -613,16 +613,19 @@ export function searchMemories(
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const { temporalDecayHalfLifeDays = 0 } = options;
+  // Fetch a larger candidate pool when decay re-ranking is active so the
+  // SQL LIMIT does not prune highly-relevant-but-older rows before scoring.
+  const candidateLimit = temporalDecayHalfLifeDays > 0 ? limit * 3 : limit;
 
   const sql = `
-    SELECT ${MEMORY_SELECT_COLUMNS}
-    FROM memories m
+    SELECT ${MEMORY_SELECT_COLUMNS}, memory_fts.rank AS fts_rank
+    FROM memory_fts
+    JOIN memories m ON m.id = memory_fts.rowid
     ${whereClause}
-    ORDER BY m.last_referenced DESC
+    ORDER BY memory_fts.rank
     LIMIT ?
   `;
-  params.push(limit);
+  params.push(candidateLimit);
 
   const rows = db.prepare(sql).all(...params) as Array<{
     id: number;
@@ -635,18 +638,27 @@ export function searchMemories(
     corrected_to: string | null;
     created: string;
     last_referenced: string;
+    fts_rank: number;
   }>;
 
-  const entries = rows.map(mapRow);
-
-  if (temporalDecayHalfLifeDays > 0) {
-    return entries
-      .map(e => ({ entry: e, decay: temporalDecay(e.lastReferenced, temporalDecayHalfLifeDays) }))
-      .sort((a, b) => b.decay - a.decay)
-      .map(({ entry }) => entry);
+  if (!temporalDecayHalfLifeDays) {
+    return rows.map(mapRow);
   }
 
-  return entries;
+  // BM25 rank from FTS5 is negative (lower = better). Normalise to [0,1].
+  const rawRanks = rows.map(r => Math.abs(r.fts_rank));
+  const maxRank = Math.max(...rawRanks, 1e-6);
+
+  return rows
+    .map(r => {
+      const entry = mapRow(r);
+      const normFts = Math.abs(r.fts_rank) / maxRank;
+      const decay = temporalDecay(entry.lastReferenced, temporalDecayHalfLifeDays);
+      return { entry, score: normFts * decay };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ entry }) => entry);
 }
 
 /**
