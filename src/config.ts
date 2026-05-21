@@ -51,6 +51,7 @@ const DEFAULT_CONFIG: MemoryConfig = {
   consolidationTimeoutMs: DEFAULT_CONSOLIDATION_TIMEOUT_MS,
   nudgeToolCalls: DEFAULT_NUDGE_TOOL_CALLS,
   autoRetrieval: true,
+  temporalDecayHalfLifeDays: 0,
   projectsMemoryDir: DEFAULT_PROJECTS_MEMORY_DIR,
   sessionSearch: { variant: "legacy" },
 };
@@ -113,6 +114,7 @@ export function loadConfig(configPath = DEFAULT_CONFIG_PATH): MemoryConfig {
       if (typeof parsed.failureInjectionMaxEntries === "number") config.failureInjectionMaxEntries = parsed.failureInjectionMaxEntries;
       if (typeof parsed.nudgeToolCalls === "number") config.nudgeToolCalls = parsed.nudgeToolCalls;
       if (typeof parsed.autoRetrieval === "boolean") config.autoRetrieval = parsed.autoRetrieval;
+      if (isNonNegativeNumber(parsed.temporalDecayHalfLifeDays)) config.temporalDecayHalfLifeDays = parsed.temporalDecayHalfLifeDays;
       if (typeof parsed.projectCharLimit === "number") config.projectCharLimit = parsed.projectCharLimit;
       if (typeof parsed.memoryDir === "string") {
         const normalizedMemoryDir = normalizeConfiguredMemoryDir(parsed.memoryDir);

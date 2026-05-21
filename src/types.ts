@@ -72,6 +72,8 @@ export interface MemoryConfig {
   consolidationTimeoutMs: number;
   /** Automatically search extended memory before each LLM call and inject results into context. Default: true */
   autoRetrieval: boolean;
+  /** Half-life in days for exponential temporal decay applied to search scores. 0 = disabled. Default: 0 */
+  temporalDecayHalfLifeDays: number;
 }
 
 export type MemoryCategory =

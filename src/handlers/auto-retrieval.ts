@@ -26,6 +26,7 @@ function buildMemoryContextBlock(entries: string[]): string {
 export function setupAutoRetrieval(
   pi: ExtensionAPI,
   dbManager: DatabaseManager,
+  temporalDecayHalfLifeDays = 0,
 ): void {
   let prefetchedBlock = "";
   let prefetchPending = false;
@@ -50,7 +51,7 @@ export function setupAutoRetrieval(
     // Run search in the background — don't await, just store result
     Promise.resolve().then(() => {
       try {
-        const results = searchMemories(dbManager, query, { limit: MAX_RESULTS });
+        const results = searchMemories(dbManager, query, { limit: MAX_RESULTS, temporalDecayHalfLifeDays });
         if (results.length > 0) {
           prefetchedBlock = buildMemoryContextBlock(results.map((r) => r.content));
         } else {

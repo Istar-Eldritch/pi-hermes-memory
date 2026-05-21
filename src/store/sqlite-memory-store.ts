@@ -567,13 +567,20 @@ function escapeFts5Query(query: string): string {
   return terms.map(t => `"${t.replace(/"/g, '""')}"`).join(' ');
 }
 
+function temporalDecay(dateStr: string, halfLifeDays: number): number {
+  if (halfLifeDays <= 0) return 1.0;
+  const ageDays = (Date.now() - Date.parse(dateStr)) / 86_400_000;
+  if (ageDays < 0) return 1.0;
+  return Math.pow(0.5, ageDays / halfLifeDays);
+}
+
 /**
  * Search memories using FTS5.
  */
 export function searchMemories(
   dbManager: DatabaseManager,
   query: string,
-  options: { project?: string; target?: string; category?: MemoryCategory; limit?: number } = {}
+  options: { project?: string; target?: string; category?: MemoryCategory; limit?: number; temporalDecayHalfLifeDays?: number } = {}
 ): SqliteMemoryEntry[] {
   const db = dbManager.getDb();
   const { project, target, category, limit = 10 } = options;
@@ -606,6 +613,8 @@ export function searchMemories(
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
+  const { temporalDecayHalfLifeDays = 0 } = options;
+
   const sql = `
     SELECT ${MEMORY_SELECT_COLUMNS}
     FROM memories m
@@ -628,7 +637,16 @@ export function searchMemories(
     last_referenced: string;
   }>;
 
-  return rows.map(mapRow);
+  const entries = rows.map(mapRow);
+
+  if (temporalDecayHalfLifeDays > 0) {
+    return entries
+      .map(e => ({ entry: e, decay: temporalDecay(e.lastReferenced, temporalDecayHalfLifeDays) }))
+      .sort((a, b) => b.decay - a.decay)
+      .map(({ entry }) => entry);
+  }
+
+  return entries;
 }
 
 /**
