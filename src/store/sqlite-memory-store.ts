@@ -559,8 +559,12 @@ function escapeFts5Query(query: string): string {
   if (/\b(OR|AND|NOT|NEAR)\b/.test(query)) {
     return query;
   }
-  // Otherwise, wrap in double quotes to treat as literal phrase
-  return `"${query.replace(/"/g, '""')}"`;
+  // Quote each term individually — FTS5 implicit AND: all terms must appear, in any order.
+  // Wrapping the whole query as a phrase requires consecutive word order which almost never
+  // matches memory entries and silently returns zero results for multi-word queries.
+  const terms = query.trim().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return '""';
+  return terms.map(t => `"${t.replace(/"/g, '""')}"`).join(' ');
 }
 
 /**
