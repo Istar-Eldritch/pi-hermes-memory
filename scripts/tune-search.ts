@@ -135,10 +135,17 @@ function fmtCfg(cfg: Config): string {
 }
 
 function main(): void {
-  const evalFile = process.argv[2] ?? path.join(process.cwd(), 'fixtures', 'eval-mined.jsonl');
+  const useJudged = process.argv.includes('--judged');
+  const defaultFile = useJudged
+    ? path.join(process.cwd(), 'fixtures', 'eval-judged.jsonl')
+    : path.join(process.cwd(), 'fixtures', 'eval-mined.jsonl');
+  const evalFile = process.argv.find((a) => !a.startsWith('--') && a !== process.argv[0] && a !== process.argv[1]) ?? defaultFile;
   const memoryDir = process.argv[3] ?? path.join(os.homedir(), '.pi', 'agent', 'pi-hermes-memory');
 
-  const pairs = loadEval(evalFile);
+  let pairs = loadEval(evalFile);
+  if (useJudged) {
+    pairs = (pairs as Array<EvalPair & { relevance?: number }>).filter((p) => (p.relevance ?? 2) >= 2);
+  }
   if (pairs.length === 0) {
     console.error(`No eval pairs in ${evalFile}`);
     process.exit(1);

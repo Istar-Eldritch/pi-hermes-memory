@@ -38,16 +38,19 @@ function buildWidgetLines(entries: string[]): string[] {
   return [header, ...body];
 }
 
+import type { LiveSearchConfig } from '../calibration/search-config.js';
+
 export function setupAutoRetrieval(
   pi: ExtensionAPI,
   dbManager: DatabaseManager,
   temporalDecayHalfLifeDays = 0,
   frequencyBoost = false,
-  jaccardWeight = 0.3,
-  hrrWeight = 0.8,
-  ftsWeight = 0.15,
-  minScore = 0.3,
+  liveConfig?: LiveSearchConfig,
 ): void {
+  const jaccardWeight = () => liveConfig?.current.jaccardWeight ?? 0.3;
+  const hrrWeight = () => liveConfig?.current.hrrWeight ?? 0.8;
+  const ftsWeight = () => liveConfig?.current.ftsWeight ?? 0.15;
+  const minScore = () => liveConfig?.current.minScore ?? 0.3;
   let prefetchedBlock = "";
   let prefetchPending = false;
   let lastCtx: ExtensionContext | undefined;
@@ -93,12 +96,12 @@ export function setupAutoRetrieval(
       try {
         const results = searchMemories(dbManager, query, {
           limit: MAX_RESULTS,
-          temporalDecayHalfLifeDays,
+          temporalDecayHalfLifeDays: liveConfig?.current.temporalDecayHalfLifeDays ?? temporalDecayHalfLifeDays,
           frequencyBoost,
-          ftsWeight,
-          jaccardWeight,
-          hrrWeight,
-          minScore,
+          ftsWeight: ftsWeight(),
+          jaccardWeight: jaccardWeight(),
+          hrrWeight: hrrWeight(),
+          minScore: minScore(),
         });
         const contents = results.map((r) => r.content);
         if (contents.length > 0) {

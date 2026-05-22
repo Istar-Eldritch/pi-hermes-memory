@@ -47,6 +47,8 @@ import { registerSyncMarkdownMemoriesCommand, syncMarkdownMemoriesToSqlite } fro
 import { setupAutoRetrieval } from "./handlers/auto-retrieval.js";
 import { registerPreviewContextCommand } from "./handlers/preview-context.js";
 import { registerBackfillHrrCommand } from "./handlers/backfill-hrr.js";
+import { registerRecalibrateCommand } from "./handlers/recalibrate.js";
+import { createLiveConfig } from "./calibration/search-config.js";
 import { loadConfig } from "./config.js";
 import { detectProject, detectProjectSkills } from "./project.js";
 import { buildPromptContext } from "./prompt-context.js";
@@ -197,6 +199,8 @@ export default function (pi: ExtensionAPI) {
   registerSyncMarkdownMemoriesCommand(pi, dbManager, globalDir, config.projectsMemoryDir, agentRoot);
   registerPreviewContextCommand(pi, store, projectStore, projectName, config);
   registerBackfillHrrCommand(pi, dbManager);
+  const liveConfig = createLiveConfig(globalDir);
+  registerRecalibrateCommand(pi, dbManager, globalDir, liveConfig);
 
   // ── 10. SQLite session search + extended memory ──
   registerSessionSearchTool(pi, dbManager, config.sessionSearch ?? { variant: "legacy" });
@@ -204,7 +208,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── 11. Auto-retrieval: search extended memory before each LLM call ──
   if (config.autoRetrieval !== false) {
-    setupAutoRetrieval(pi, dbManager, config.temporalDecayHalfLifeDays, config.frequencyBoost);
+    setupAutoRetrieval(pi, dbManager, config.temporalDecayHalfLifeDays, config.frequencyBoost, liveConfig);
   }
   registerIndexSessionsCommand(pi);
 
