@@ -156,6 +156,9 @@ export class DatabaseManager {
     if (!names.has('corrected_to')) {
       db.exec('ALTER TABLE memories ADD COLUMN corrected_to TEXT');
     }
+    if (!names.has('reference_count')) {
+      db.exec('ALTER TABLE memories ADD COLUMN reference_count INTEGER NOT NULL DEFAULT 1');
+    }
   }
 
   private migrateLegacyMemoriesTargetConstraint(db: DatabaseLike): void {

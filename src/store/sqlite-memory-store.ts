@@ -11,7 +11,8 @@ const MEMORY_SELECT_COLUMNS = `
   tool_state,
   corrected_to,
   created,
-  last_referenced
+  last_referenced,
+  COALESCE(reference_count, 0) AS reference_count
 `;
 
 const FAILURE_CATEGORY_SET = new Set<MemoryCategory>([
@@ -37,6 +38,7 @@ export interface SqliteMemoryEntry {
   correctedTo: string | null;
   created: string;
   lastReferenced: string;
+  referenceCount: number;
 }
 
 export interface SqliteMemorySyncInput {
@@ -99,6 +101,7 @@ function mapRow(row: {
   corrected_to: string | null;
   created: string;
   last_referenced: string;
+  reference_count?: number;
 }): SqliteMemoryEntry {
   return {
     id: row.id,
@@ -111,6 +114,7 @@ function mapRow(row: {
     correctedTo: row.corrected_to,
     created: row.created,
     lastReferenced: row.last_referenced,
+    referenceCount: row.reference_count ?? 0,
   };
 }
 
@@ -228,6 +232,7 @@ export function addMemory(
     correctedTo,
     created,
     lastReferenced,
+    referenceCount: 1,
   };
 }
 
@@ -580,10 +585,10 @@ function temporalDecay(dateStr: string, halfLifeDays: number): number {
 export function searchMemories(
   dbManager: DatabaseManager,
   query: string,
-  options: { project?: string; target?: string; category?: MemoryCategory; limit?: number; temporalDecayHalfLifeDays?: number } = {}
+  options: { project?: string; target?: string; category?: MemoryCategory; limit?: number; temporalDecayHalfLifeDays?: number; frequencyBoost?: boolean } = {}
 ): SqliteMemoryEntry[] {
   const db = dbManager.getDb();
-  const { project, target, category, limit = 10, temporalDecayHalfLifeDays = 0 } = options;
+  const { project, target, category, limit = 10, temporalDecayHalfLifeDays = 0, frequencyBoost = false } = options;
 
   const conditions: string[] = [];
   const params: unknown[] = [];
@@ -613,12 +618,13 @@ export function searchMemories(
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  // Fetch a larger candidate pool when decay re-ranking is active so the
+  // Fetch a larger candidate pool when re-ranking is active so the
   // SQL LIMIT does not prune highly-relevant-but-older rows before scoring.
-  const candidateLimit = temporalDecayHalfLifeDays > 0 ? limit * 3 : limit;
+  const reranking = temporalDecayHalfLifeDays > 0 || frequencyBoost;
+  const candidateLimit = reranking ? limit * 3 : limit;
 
   const sql = `
-    SELECT m.id, m.project, m.target, m.category, m.content, m.failure_reason, m.tool_state, m.corrected_to, m.created, m.last_referenced, memory_fts.rank AS fts_rank
+    SELECT m.id, m.project, m.target, m.category, m.content, m.failure_reason, m.tool_state, m.corrected_to, m.created, m.last_referenced, COALESCE(m.reference_count, 0) AS reference_count, memory_fts.rank AS fts_rank
     FROM memory_fts
     JOIN memories m ON m.id = memory_fts.rowid
     ${whereClause}
@@ -638,10 +644,11 @@ export function searchMemories(
     corrected_to: string | null;
     created: string;
     last_referenced: string;
+    reference_count: number;
     fts_rank: number;
   }>;
 
-  if (!temporalDecayHalfLifeDays) {
+  if (!reranking) {
     return rows.map(mapRow);
   }
 
@@ -649,12 +656,17 @@ export function searchMemories(
   const rawRanks = rows.map(r => Math.abs(r.fts_rank));
   const maxRank = Math.max(...rawRanks, 1e-6);
 
+  // Frequency boost: log(1 + count) normalised by the max in the candidate set.
+  const rawFreqs = rows.map(r => Math.log1p(r.reference_count));
+  const maxFreq = Math.max(...rawFreqs, 1e-6);
+
   return rows
     .map(r => {
       const entry = mapRow(r);
       const normFts = Math.abs(r.fts_rank) / maxRank;
       const decay = temporalDecay(entry.lastReferenced, temporalDecayHalfLifeDays);
-      return { entry, score: normFts * decay };
+      const freq = frequencyBoost ? Math.log1p(r.reference_count) / maxFreq : 1.0;
+      return { entry, score: normFts * decay * freq };
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
@@ -777,7 +789,7 @@ export function getRecentFailures(
  */
 export function touchMemory(dbManager: DatabaseManager, id: number): void {
   const db = dbManager.getDb();
-  db.prepare('UPDATE memories SET last_referenced = ? WHERE id = ?').run(today(), id);
+  db.prepare('UPDATE memories SET last_referenced = ?, reference_count = COALESCE(reference_count, 0) + 1 WHERE id = ?').run(today(), id);
 }
 
 /**

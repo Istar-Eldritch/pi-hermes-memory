@@ -74,6 +74,8 @@ export interface MemoryConfig {
   autoRetrieval: boolean;
   /** Half-life in days for exponential temporal decay applied to search scores. 0 = disabled. Default: 0 */
   temporalDecayHalfLifeDays: number;
+  /** Apply a log-scale frequency boost to search scores based on how often a memory has been retrieved. Default: false */
+  frequencyBoost: boolean;
 }
 
 export type MemoryCategory =

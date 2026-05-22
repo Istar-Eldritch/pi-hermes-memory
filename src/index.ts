@@ -198,11 +198,11 @@ export default function (pi: ExtensionAPI) {
 
   // ── 10. SQLite session search + extended memory ──
   registerSessionSearchTool(pi, dbManager, config.sessionSearch ?? { variant: "legacy" });
-  registerMemorySearchTool(pi, dbManager, config.temporalDecayHalfLifeDays);
+  registerMemorySearchTool(pi, dbManager, config.temporalDecayHalfLifeDays, config.frequencyBoost);
 
   // ── 11. Auto-retrieval: search extended memory before each LLM call ──
   if (config.autoRetrieval !== false) {
-    setupAutoRetrieval(pi, dbManager, config.temporalDecayHalfLifeDays);
+    setupAutoRetrieval(pi, dbManager, config.temporalDecayHalfLifeDays, config.frequencyBoost);
   }
   registerIndexSessionsCommand(pi);
 

@@ -27,6 +27,7 @@ export function setupAutoRetrieval(
   pi: ExtensionAPI,
   dbManager: DatabaseManager,
   temporalDecayHalfLifeDays = 0,
+  frequencyBoost = false,
 ): void {
   let prefetchedBlock = "";
   let prefetchPending = false;
@@ -51,7 +52,7 @@ export function setupAutoRetrieval(
     // Run search in the background — don't await, just store result
     Promise.resolve().then(() => {
       try {
-        const results = searchMemories(dbManager, query, { limit: MAX_RESULTS, temporalDecayHalfLifeDays });
+        const results = searchMemories(dbManager, query, { limit: MAX_RESULTS, temporalDecayHalfLifeDays, frequencyBoost });
         if (results.length > 0) {
           prefetchedBlock = buildMemoryContextBlock(results.map((r) => r.content));
         } else {
