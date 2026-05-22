@@ -1,17 +1,5 @@
 import { DatabaseManager } from './db.js';
-
-/**
- * Escape a string for FTS5 query syntax.
- * Wraps the query in double quotes to treat it as a literal phrase.
- */
-function escapeFts5Query(query: string): string {
-  // If the query already contains FTS5 operators (OR, AND, NOT, NEAR), leave it as-is
-  if (/\b(OR|AND|NOT|NEAR)\b/.test(query)) {
-    return query;
-  }
-  // Otherwise, wrap in double quotes to treat as literal phrase
-  return `"${query.replace(/"/g, '""')}"`;
-}
+import { escapeFts5Query, temporalDecay, tokenizeForJaccard, jaccard } from './fts-utils.js';
 
 /**
  * Search result from session history.
@@ -37,15 +25,33 @@ export interface SessionSearchOptions {
   role?: string;
   /** Only return messages after this date (ISO string) */
   since?: string;
+  /**
+   * Temporal decay half-life in days. 0 disables decay (default: 60).
+   * Older messages are downweighted but never excluded.
+   */
+  temporalDecayHalfLifeDays?: number;
+  /** Weight of normalised BM25 (FTS rank) in the composite relevance score. */
+  ftsWeight?: number;
+  /** Weight of Jaccard token overlap in the composite relevance score. */
+  jaccardWeight?: number;
+  /** Drop candidates whose relevance is below this threshold (default: 0). */
+  minScore?: number;
 }
 
+type CandidateRow = {
+  session_id: string;
+  project: string;
+  role: string;
+  content: string;
+  timestamp: string;
+  snippet: string;
+  fts_rank: number;
+};
+
 /**
- * Search across indexed session messages using FTS5.
- *
- * @param dbManager — Database manager instance
- * @param query — FTS5 search query
- * @param options — Search options
- * @returns Array of search results with snippets
+ * Search across indexed session messages using FTS5, with optional
+ * temporal-decay and Jaccard reranking. Multi-word queries use FTS5's
+ * implicit AND (all terms must appear, in any order).
  */
 export function searchSessions(
   dbManager: DatabaseManager,
@@ -53,35 +59,35 @@ export function searchSessions(
   options: SessionSearchOptions = {}
 ): SessionSearchResult[] {
   const db = dbManager.getDb();
-  const { limit = 10, project, role, since } = options;
+  const {
+    limit = 10,
+    project,
+    role,
+    since,
+    temporalDecayHalfLifeDays = 60,
+    ftsWeight = 1,
+    jaccardWeight = 0.5,
+    minScore = 0,
+  } = options;
 
-  // Build the query dynamically based on filters
-  const conditions: string[] = [];
-  const params: unknown[] = [];
+  const conditions: string[] = ['m.rowid IN (SELECT rowid FROM message_fts WHERE message_fts MATCH ?)'];
+  const params: unknown[] = [escapeFts5Query(query)];
 
-  // FTS5 match condition — use subquery for reliable rowid matching
-  conditions.push('m.rowid IN (SELECT rowid FROM message_fts WHERE message_fts MATCH ?)');
-  params.push(escapeFts5Query(query));
-
-  // Project filter
   if (project) {
     conditions.push('s.project = ?');
     params.push(project);
   }
-
-  // Role filter
   if (role) {
     conditions.push('m.role = ?');
     params.push(role);
   }
-
-  // Date filter
   if (since) {
     conditions.push('m.timestamp >= ?');
     params.push(since);
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const reranking = temporalDecayHalfLifeDays > 0 || jaccardWeight > 0;
+  const candidateLimit = reranking ? Math.max(limit * 3, limit) : limit;
 
   const sql = `
     SELECT
@@ -90,38 +96,63 @@ export function searchSessions(
       m.role,
       m.content,
       m.timestamp,
-      m.content as snippet
+      m.content as snippet,
+      (SELECT rank FROM message_fts WHERE message_fts MATCH ? AND rowid = m.rowid) AS fts_rank
     FROM messages m
     JOIN sessions s ON s.id = m.session_id
-    ${whereClause}
-    ORDER BY m.timestamp DESC
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY fts_rank
     LIMIT ?
   `;
-  params.push(limit);
+  const allParams = [escapeFts5Query(query), ...params, candidateLimit];
 
+  let rows: CandidateRow[];
   try {
-    const rows = db.prepare(sql).all(...params) as Array<{
-      session_id: string;
-      project: string;
-      role: string;
-      content: string;
-      timestamp: string;
-      snippet: string;
-    }>;
+    rows = db.prepare(sql).all(...allParams) as CandidateRow[];
+  } catch {
+    return [];
+  }
 
-    // Map snake_case column names to camelCase
-    return rows.map(row => ({
-      sessionId: row.session_id,
+  if (rows.length === 0) return [];
+
+  const mapped = rows.map((row) => ({
+    sessionId: row.session_id,
+    project: row.project,
+    role: row.role,
+    content: row.content,
+    timestamp: row.timestamp,
+    snippet: row.snippet,
+    ftsRank: row.fts_rank,
+  }));
+
+  if (!reranking) {
+    return mapped.slice(0, limit).map(({ ftsRank: _ftsRank, ...rest }) => rest);
+  }
+
+  const ftsRanks = mapped.map((r) => Math.abs(r.ftsRank ?? 0));
+  const maxRank = Math.max(...ftsRanks, 1e-6);
+  const queryTokens = jaccardWeight > 0 ? tokenizeForJaccard(query) : null;
+  const totalWeight = Math.max(ftsWeight + jaccardWeight, 1e-9);
+
+  return mapped
+    .map((r) => {
+      const normFts = r.ftsRank != null ? Math.abs(r.ftsRank) / maxRank : 0;
+      const jacc = queryTokens ? jaccard(queryTokens, tokenizeForJaccard(r.content)) : 0;
+      const relevance = (ftsWeight * normFts + jaccardWeight * jacc) / totalWeight;
+      const decay = temporalDecay(r.timestamp, temporalDecayHalfLifeDays);
+      return { row: r, score: relevance * decay, relevance };
+    })
+    .filter((s) => s.relevance >= minScore)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ row }) => ({
+      sessionId: row.sessionId,
       project: row.project,
       role: row.role,
       content: row.content,
       timestamp: row.timestamp,
       snippet: row.snippet,
     }));
-  } catch (err) {
-    // FTS5 can throw on malformed queries — return empty results
-    return [];
-  }
 }
 
 /**

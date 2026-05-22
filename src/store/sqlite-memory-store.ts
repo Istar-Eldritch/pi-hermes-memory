@@ -1,6 +1,7 @@
 import { DatabaseManager } from './db.js';
 import type { MemoryCategory } from '../types.js';
 import { encodeText, phasesToBytes, bytesToPhases, similarity as hrrSimilarity, DEFAULT_HRR_DIM } from './hrr.js';
+import { escapeFts5Query, temporalDecay, tokenizeForJaccard, jaccard } from './fts-utils.js';
 
 const MEMORY_SELECT_COLUMNS = `
   id,
@@ -566,30 +567,6 @@ export function removeExactSyncedMemories(
 }
 
 /**
- * Escape a string for FTS5 query syntax.
- * Wraps the query in double quotes to treat it as a literal phrase.
- */
-function escapeFts5Query(query: string): string {
-  // If the query already contains FTS5 operators (OR, AND, NOT, NEAR), leave it as-is
-  if (/\b(OR|AND|NOT|NEAR)\b/.test(query)) {
-    return query;
-  }
-  // Quote each term individually — FTS5 implicit AND: all terms must appear, in any order.
-  // Wrapping the whole query as a phrase requires consecutive word order which almost never
-  // matches memory entries and silently returns zero results for multi-word queries.
-  const terms = query.trim().split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return '""';
-  return terms.map(t => `"${t.replace(/"/g, '""')}"`).join(' ');
-}
-
-function temporalDecay(dateStr: string, halfLifeDays: number): number {
-  if (halfLifeDays <= 0) return 1.0;
-  const ageDays = (Date.now() - Date.parse(dateStr)) / 86_400_000;
-  if (ageDays < 0) return 1.0;
-  return Math.pow(0.5, ageDays / halfLifeDays);
-}
-
-/**
  * Search memories using FTS5.
  */
 type CandidateRow = {
@@ -608,23 +585,6 @@ type CandidateRow = {
   hrr_dim: number | null;
   fts_rank: number | null;
 };
-
-function tokenizeForJaccard(text: string): Set<string> {
-  const out = new Set<string>();
-  for (const w of text.toLowerCase().split(/\s+/)) {
-    const cleaned = w.replace(/^[.,!?;:"'()\[\]{}<>#@]+|[.,!?;:"'()\[\]{}<>#@]+$/g, "");
-    if (cleaned) out.add(cleaned);
-  }
-  return out;
-}
-
-function jaccard(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  let inter = 0;
-  for (const t of a) if (b.has(t)) inter++;
-  const union = a.size + b.size - inter;
-  return union === 0 ? 0 : inter / union;
-}
 
 export function searchMemories(
   dbManager: DatabaseManager,

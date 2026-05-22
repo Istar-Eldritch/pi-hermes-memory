@@ -117,6 +117,36 @@ describe('session-search', () => {
       const results = searchSessions(dbManager, 'AND OR NOT');
       assert.ok(Array.isArray(results));
     });
+
+    it('should match multi-word queries via implicit AND (not phrase search)', () => {
+      indexSession(dbManager, createTestSession());
+
+      // "prisma migrations" never appears as a consecutive phrase in the seed data,
+      // but both terms appear across the indexed messages.
+      const results = searchSessions(dbManager, 'prisma migrations');
+      assert.ok(results.length > 0, 'expected multi-word query to match via implicit AND');
+    });
+
+    it('should rank more relevant messages higher with Jaccard reranking', () => {
+      indexSession(dbManager, {
+        id: 'rank-session',
+        project: 'rank-project',
+        cwd: '/test',
+        startedAt: '2026-05-03T00:00:00Z',
+        endedAt: null,
+        messages: [
+          { id: 'rs-1', role: 'user', content: 'prisma is one of many database tools', timestamp: '2026-05-03T00:01:00Z' },
+          { id: 'rs-2', role: 'assistant', content: 'prisma migrations explained in detail', timestamp: '2026-05-03T00:02:00Z' },
+        ],
+      });
+
+      const results = searchSessions(dbManager, 'prisma migrations');
+      assert.ok(results.length >= 1);
+      assert.ok(
+        results[0].content.includes('prisma migrations'),
+        `expected best-matching message first, got: ${results[0].content}`,
+      );
+    });
   });
 
   describe('getIndexedMessageCount', () => {
