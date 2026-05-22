@@ -10,21 +10,26 @@ import * as path from 'node:path';
 
 export interface PiTaskOptions {
   tools?: string[];
+  model?: string;
   cwd?: string;
   onStderr?: (line: string) => void;
 }
 
 export function runPiTask(task: string, options: PiTaskOptions = {}): Promise<void> {
-  const { tools = ['read', 'write', 'bash'], cwd = process.cwd(), onStderr } = options;
+  const {
+    tools = ['read', 'write', 'bash'],
+    model = 'claude-bridge/claude-sonnet-4-6',
+    cwd = process.cwd(),
+    onStderr,
+  } = options;
 
-  // Write task to a temp file to avoid shell-escaping issues with long prompts.
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-task-'));
   const taskFile = path.join(tmpDir, 'task.md');
   fs.writeFileSync(taskFile, `Task: ${task}`, 'utf-8');
 
   const args = [
     '--no-session',
-    '--model', 'openrouter/anthropic/claude-haiku-4-5-20251001',
+    '--model', model,
     '--thinking', 'off',
     '--tools', tools.join(','),
     `@${taskFile}`,
