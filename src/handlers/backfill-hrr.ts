@@ -9,6 +9,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { DatabaseManager } from "../store/db.js";
 import { backfillHrrVectors } from "../store/sqlite-memory-store.js";
+import { backfillMessageHrrVectors } from "../store/session-search.js";
 import { DEFAULT_HRR_DIM } from "../store/hrr.js";
 
 export function registerBackfillHrrCommand(
@@ -22,27 +23,32 @@ export function registerBackfillHrrCommand(
       ctx.ui.notify(`🧠 Backfilling HRR vectors at dim=${hrrDim}...`, "info");
       try {
         const db = dbManager.getDb();
-        const totalRow = db.prepare("SELECT COUNT(*) AS c FROM memories").get() as { c: number };
-        const missingRow = db.prepare(
+        const totalMem = (db.prepare("SELECT COUNT(*) AS c FROM memories").get() as { c: number }).c;
+        const missingMem = (db.prepare(
           "SELECT COUNT(*) AS c FROM memories WHERE hrr_vector IS NULL OR hrr_dim IS NULL OR hrr_dim != ?"
-        ).get(hrrDim) as { c: number };
+        ).get(hrrDim) as { c: number }).c;
+        const totalMsg = (db.prepare("SELECT COUNT(*) AS c FROM messages").get() as { c: number }).c;
+        const missingMsg = (db.prepare(
+          "SELECT COUNT(*) AS c FROM messages WHERE hrr_vector IS NULL OR hrr_dim IS NULL OR hrr_dim != ?"
+        ).get(hrrDim) as { c: number }).c;
 
-        if (missingRow.c === 0) {
+        if (missingMem === 0 && missingMsg === 0) {
           ctx.ui.notify(
-            `✅ All ${totalRow.c} memories already have HRR vectors at dim=${hrrDim}. Nothing to do.`,
+            `✅ All ${totalMem} memories and ${totalMsg} messages already have HRR vectors at dim=${hrrDim}. Nothing to do.`,
             "info",
           );
           return;
         }
 
         const start = Date.now();
-        const updated = backfillHrrVectors(dbManager, hrrDim);
+        const updatedMem = missingMem > 0 ? backfillHrrVectors(dbManager, hrrDim) : 0;
+        const updatedMsg = missingMsg > 0 ? backfillMessageHrrVectors(dbManager, hrrDim) : 0;
         const elapsedMs = Date.now() - start;
 
         let output = `\n✅ HRR backfill complete!\n\n`;
         output += `📊 Results:\n`;
-        output += `├─ Total memories: ${totalRow.c}\n`;
-        output += `├─ Updated: ${updated}\n`;
+        output += `├─ Memories: ${updatedMem}/${totalMem} updated\n`;
+        output += `├─ Messages: ${updatedMsg}/${totalMsg} updated\n`;
         output += `├─ Dimension: ${hrrDim} (≈${Math.round((hrrDim * 8) / 1024)} KB/row)\n`;
         output += `└─ Took: ${elapsedMs} ms\n`;
         output += `\n💡 Hybrid search now has full vector coverage on this store.`;
