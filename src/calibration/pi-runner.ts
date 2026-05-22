@@ -24,7 +24,6 @@ export function runPiTask(task: string, options: PiTaskOptions = {}): Promise<vo
 
   const args = [
     '--no-session',
-    '--no-extensions',
     '--thinking', 'off',
     '--tools', tools.join(','),
     `@${taskFile}`,
