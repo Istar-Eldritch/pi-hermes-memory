@@ -9,18 +9,30 @@
  * never touched.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DatabaseManager } from "../store/db.js";
 import { searchMemories } from "../store/sqlite-memory-store.js";
 
 const FENCE_OPEN = "<memory-context>";
 const FENCE_CLOSE = "</memory-context>";
 const MAX_RESULTS = 5;
+const WIDGET_KEY = "hermes-memory-prefetch";
+const WIDGET_MAX_CHARS = 140;
 
 function buildMemoryContextBlock(entries: string[]): string {
   if (entries.length === 0) return "";
   const body = entries.map((e, i) => `${i + 1}. ${e}`).join("\n");
   return `${FENCE_OPEN}\nRelevant memories retrieved for this turn:\n${body}\n${FENCE_CLOSE}`;
+}
+
+function buildWidgetLines(entries: string[]): string[] {
+  const header = `🧠 Prefetched memories (${entries.length})`;
+  const body = entries.map((e, i) => {
+    const oneLine = e.replace(/\s+/g, " ").trim();
+    const truncated = oneLine.length > WIDGET_MAX_CHARS ? oneLine.slice(0, WIDGET_MAX_CHARS - 1) + "…" : oneLine;
+    return `  ${i + 1}. ${truncated}`;
+  });
+  return [header, ...body];
 }
 
 export function setupAutoRetrieval(
@@ -31,12 +43,14 @@ export function setupAutoRetrieval(
 ): void {
   let prefetchedBlock = "";
   let prefetchPending = false;
+  let lastCtx: ExtensionContext | undefined;
 
   // After each user message, kick off a background search using the message text as query.
   // Result is stored and consumed on the next context event.
-  pi.on("message_end", async (event, _ctx) => {
+  pi.on("message_end", async (event, ctx) => {
     const msg = event.message;
     if (msg.role !== "user") return;
+    lastCtx = ctx;
 
     const text = typeof msg.content === "string"
       ? msg.content
@@ -53,10 +67,17 @@ export function setupAutoRetrieval(
     Promise.resolve().then(() => {
       try {
         const results = searchMemories(dbManager, query, { limit: MAX_RESULTS, temporalDecayHalfLifeDays, frequencyBoost });
-        if (results.length > 0) {
-          prefetchedBlock = buildMemoryContextBlock(results.map((r) => r.content));
+        const contents = results.map((r) => r.content);
+        if (contents.length > 0) {
+          prefetchedBlock = buildMemoryContextBlock(contents);
+          if (lastCtx?.hasUI) {
+            try { lastCtx.ui.setWidget(WIDGET_KEY, buildWidgetLines(contents), { placement: "aboveEditor" }); } catch { /* ignore */ }
+          }
         } else {
           prefetchedBlock = "";
+          if (lastCtx?.hasUI) {
+            try { lastCtx.ui.setWidget(WIDGET_KEY, undefined); } catch { /* ignore */ }
+          }
         }
       } catch {
         prefetchedBlock = "";
