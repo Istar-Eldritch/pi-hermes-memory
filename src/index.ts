@@ -204,17 +204,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── 11. Auto-retrieval: search extended memory before each LLM call ──
   if (config.autoRetrieval !== false) {
-    setupAutoRetrieval(
-      pi,
-      dbManager,
-      config.temporalDecayHalfLifeDays,
-      config.frequencyBoost,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      project.name ?? null,
-    );
+    setupAutoRetrieval(pi, dbManager, config.temporalDecayHalfLifeDays, config.frequencyBoost);
   }
   registerIndexSessionsCommand(pi);
 
