@@ -64,7 +64,9 @@ export const SCHEMA_SQL = `
     corrected_to TEXT,
     created DATE NOT NULL,
     last_referenced DATE NOT NULL,
-    reference_count INTEGER NOT NULL DEFAULT 1
+    reference_count INTEGER NOT NULL DEFAULT 1,
+    hrr_vector BLOB,
+    hrr_dim INTEGER
   );
 
   -- FTS5 index for memory search

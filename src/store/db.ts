@@ -159,6 +159,12 @@ export class DatabaseManager {
     if (!names.has('reference_count')) {
       db.exec('ALTER TABLE memories ADD COLUMN reference_count INTEGER NOT NULL DEFAULT 1');
     }
+    if (!names.has('hrr_vector')) {
+      db.exec('ALTER TABLE memories ADD COLUMN hrr_vector BLOB');
+    }
+    if (!names.has('hrr_dim')) {
+      db.exec('ALTER TABLE memories ADD COLUMN hrr_dim INTEGER');
+    }
   }
 
   private migrateLegacyMemoriesTargetConstraint(db: DatabaseLike): void {

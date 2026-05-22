@@ -40,6 +40,10 @@ export function setupAutoRetrieval(
   dbManager: DatabaseManager,
   temporalDecayHalfLifeDays = 0,
   frequencyBoost = false,
+  jaccardWeight = 0.3,
+  hrrWeight = 0.5,
+  ftsWeight = 0.2,
+  minScore = 0.35,
 ): void {
   let prefetchedBlock = "";
   let prefetchPending = false;
@@ -66,7 +70,15 @@ export function setupAutoRetrieval(
     // Run search in the background — don't await, just store result
     Promise.resolve().then(() => {
       try {
-        const results = searchMemories(dbManager, query, { limit: MAX_RESULTS, temporalDecayHalfLifeDays, frequencyBoost });
+        const results = searchMemories(dbManager, query, {
+          limit: MAX_RESULTS,
+          temporalDecayHalfLifeDays,
+          frequencyBoost,
+          ftsWeight,
+          jaccardWeight,
+          hrrWeight,
+          minScore,
+        });
         const contents = results.map((r) => r.content);
         if (contents.length > 0) {
           prefetchedBlock = buildMemoryContextBlock(contents);

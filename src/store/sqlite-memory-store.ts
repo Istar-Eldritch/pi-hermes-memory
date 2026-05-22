@@ -1,5 +1,6 @@
 import { DatabaseManager } from './db.js';
 import type { MemoryCategory } from '../types.js';
+import { encodeText, phasesToBytes, bytesToPhases, similarity as hrrSimilarity, DEFAULT_HRR_DIM } from './hrr.js';
 
 const MEMORY_SELECT_COLUMNS = `
   id,
@@ -213,14 +214,22 @@ export function addMemory(
   toolState: string | null = null,
   correctedTo: string | null = null,
   created = today(),
-  lastReferenced = created
+  lastReferenced = created,
+  hrrDim: number = DEFAULT_HRR_DIM
 ): SqliteMemoryEntry {
   const db = dbManager.getDb();
 
+  let hrrVector: Buffer | null = null;
+  try {
+    hrrVector = phasesToBytes(encodeText(content, hrrDim));
+  } catch {
+    hrrVector = null;
+  }
+
   const result = db.prepare(`
-    INSERT INTO memories (project, target, category, content, failure_reason, tool_state, corrected_to, created, last_referenced)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(project, target, category, content, failureReason, toolState, correctedTo, created, lastReferenced);
+    INSERT INTO memories (project, target, category, content, failure_reason, tool_state, corrected_to, created, last_referenced, hrr_vector, hrr_dim)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(project, target, category, content, failureReason, toolState, correctedTo, created, lastReferenced, hrrVector, hrrVector ? hrrDim : null);
 
   return {
     id: Number(result.lastInsertRowid),
@@ -583,101 +592,201 @@ function temporalDecay(dateStr: string, halfLifeDays: number): number {
 /**
  * Search memories using FTS5.
  */
+type CandidateRow = {
+  id: number;
+  project: string | null;
+  target: string;
+  category: string | null;
+  content: string;
+  failure_reason: string | null;
+  tool_state: string | null;
+  corrected_to: string | null;
+  created: string;
+  last_referenced: string;
+  reference_count: number;
+  hrr_vector: Buffer | null;
+  hrr_dim: number | null;
+  fts_rank: number | null;
+};
+
+function tokenizeForJaccard(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const w of text.toLowerCase().split(/\s+/)) {
+    const cleaned = w.replace(/^[.,!?;:"'()\[\]{}<>#@]+|[.,!?;:"'()\[\]{}<>#@]+$/g, "");
+    if (cleaned) out.add(cleaned);
+  }
+  return out;
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
 export function searchMemories(
   dbManager: DatabaseManager,
   query: string,
-  options: { project?: string; target?: string; category?: MemoryCategory; limit?: number; temporalDecayHalfLifeDays?: number; frequencyBoost?: boolean } = {}
+  options: {
+    project?: string;
+    target?: string;
+    category?: MemoryCategory;
+    limit?: number;
+    temporalDecayHalfLifeDays?: number;
+    frequencyBoost?: boolean;
+    jaccardWeight?: number;
+    hrrWeight?: number;
+    ftsWeight?: number;
+    hrrCandidateCap?: number;
+    minScore?: number;
+  } = {}
 ): SqliteMemoryEntry[] {
   const db = dbManager.getDb();
-  const { project, target, category, limit = 10, temporalDecayHalfLifeDays = 0, frequencyBoost = false } = options;
+  const {
+    project,
+    target,
+    category,
+    limit = 10,
+    temporalDecayHalfLifeDays = 0,
+    frequencyBoost = false,
+    jaccardWeight = 0,
+    hrrWeight = 0,
+    ftsWeight = 1,
+    hrrCandidateCap = 500,
+    minScore = 0,
+  } = options;
 
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-
-  // JOIN with memory_fts to expose the BM25 rank for scoring
-  conditions.push('memory_fts MATCH ?');
-  params.push(escapeFts5Query(query));
-
+  const filterClauses: string[] = [];
+  const filterParams: unknown[] = [];
   if (project !== undefined) {
     if (project === null) {
-      conditions.push('m.project IS NULL');
+      filterClauses.push('m.project IS NULL');
     } else {
-      conditions.push('m.project = ?');
-      params.push(project);
+      filterClauses.push('m.project = ?');
+      filterParams.push(project);
     }
   }
-
   if (target) {
-    conditions.push('m.target = ?');
-    params.push(target);
+    filterClauses.push('m.target = ?');
+    filterParams.push(target);
   }
-
   if (category) {
-    conditions.push('m.category = ?');
-    params.push(category);
+    filterClauses.push('m.category = ?');
+    filterParams.push(category);
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-
-  // Fetch a larger candidate pool when re-ranking is active so the
-  // SQL LIMIT does not prune highly-relevant-but-older rows before scoring.
-  const reranking = temporalDecayHalfLifeDays > 0 || frequencyBoost;
+  const reranking = temporalDecayHalfLifeDays > 0 || frequencyBoost || jaccardWeight > 0 || hrrWeight > 0;
   const candidateLimit = reranking ? limit * 3 : limit;
 
-  const sql = `
-    SELECT m.id, m.project, m.target, m.category, m.content, m.failure_reason, m.tool_state, m.corrected_to, m.created, m.last_referenced, m.reference_count, memory_fts.rank AS fts_rank
+  // Stage 1: FTS5 candidates (implicit AND across query terms).
+  const ftsConditions = ['memory_fts MATCH ?', ...filterClauses];
+  const ftsParams: unknown[] = [escapeFts5Query(query), ...filterParams];
+  const ftsSql = `
+    SELECT m.id, m.project, m.target, m.category, m.content, m.failure_reason, m.tool_state, m.corrected_to, m.created, m.last_referenced, m.reference_count, m.hrr_vector, m.hrr_dim, memory_fts.rank AS fts_rank
     FROM memory_fts
     JOIN memories m ON m.id = memory_fts.rowid
-    ${whereClause}
+    WHERE ${ftsConditions.join(' AND ')}
     ORDER BY memory_fts.rank
     LIMIT ?
   `;
-  params.push(candidateLimit);
+  ftsParams.push(candidateLimit);
+  const ftsRows = db.prepare(ftsSql).all(...ftsParams) as CandidateRow[];
 
-  const rows = db.prepare(sql).all(...params) as Array<{
-    id: number;
-    project: string | null;
-    target: string;
-    category: string | null;
-    content: string;
-    failure_reason: string | null;
-    tool_state: string | null;
-    corrected_to: string | null;
-    created: string;
-    last_referenced: string;
-    reference_count: number;
-    fts_rank: number;
-  }>;
+  // Stage 2 (HRR only): pull additional candidates that may have zero FTS overlap.
+  // This is the key bypass for FTS5's implicit-AND blind spot on long queries.
+  let extraRows: CandidateRow[] = [];
+  if (hrrWeight > 0) {
+    const seen = new Set(ftsRows.map((r) => r.id));
+    const where = filterClauses.length > 0 ? `WHERE m.hrr_vector IS NOT NULL AND ${filterClauses.join(' AND ')}` : 'WHERE m.hrr_vector IS NOT NULL';
+    const hrrSql = `
+      SELECT m.id, m.project, m.target, m.category, m.content, m.failure_reason, m.tool_state, m.corrected_to, m.created, m.last_referenced, m.reference_count, m.hrr_vector, m.hrr_dim, NULL AS fts_rank
+      FROM memories m
+      ${where}
+      ORDER BY m.id DESC
+      LIMIT ?
+    `;
+    const all = db.prepare(hrrSql).all(...filterParams, hrrCandidateCap) as CandidateRow[];
+    extraRows = all.filter((r) => !seen.has(r.id));
+  }
+
+  const rows = [...ftsRows, ...extraRows];
+  if (rows.length === 0) return [];
 
   if (!reranking) {
     return rows.map(mapRow);
   }
 
-  // BM25 rank from FTS5 is negative (lower = better). Normalise to [0,1].
-  const rawRanks = rows.map(r => Math.abs(r.fts_rank));
-  const maxRank = Math.max(...rawRanks, 1e-6);
+  // BM25 rank from FTS5 is negative (lower = better). Normalise to [0,1] across FTS hits only.
+  const ftsRanks = ftsRows.map((r) => Math.abs(r.fts_rank ?? 0));
+  const maxRank = Math.max(...ftsRanks, 1e-6);
 
   // Frequency boost: log(1 + accesses/day) normalised by the max in the candidate set.
-  // Using rate (count / age) rather than raw count so older entries don't accumulate
-  // an unfair advantage over newer ones with a higher access rate.
   const now = Date.now();
-  const rawFreqs = rows.map(r => {
+  const rawFreqs = rows.map((r) => {
     const ageDays = Math.max(1, (now - Date.parse(r.created)) / 86_400_000);
     return Math.log1p(r.reference_count / ageDays);
   });
   const maxFreq = Math.max(...rawFreqs, 1e-6);
 
+  // Precompute query tokens + HRR vector once.
+  const queryTokens = (jaccardWeight > 0) ? tokenizeForJaccard(query) : null;
+  const hrrDimUsed = rows.find((r) => r.hrr_dim)?.hrr_dim ?? DEFAULT_HRR_DIM;
+  const queryHrr = (hrrWeight > 0) ? encodeText(query, hrrDimUsed) : null;
+
+  const totalWeight = Math.max(ftsWeight + jaccardWeight + hrrWeight, 1e-9);
+
   return rows
     .map((r, i) => {
       const entry = mapRow(r);
-      const normFts = Math.abs(r.fts_rank) / maxRank;
+      const normFts = r.fts_rank != null ? Math.abs(r.fts_rank) / maxRank : 0;
+      let jacc = 0;
+      if (queryTokens) {
+        jacc = jaccard(queryTokens, tokenizeForJaccard(r.content));
+      }
+      let hrrSim = 0;
+      if (queryHrr && r.hrr_vector && r.hrr_dim === queryHrr.length) {
+        const v = bytesToPhases(r.hrr_vector);
+        hrrSim = (hrrSimilarity(queryHrr, v) + 1) / 2; // shift [-1,1] → [0,1]
+      }
+      const relevance = (ftsWeight * normFts + jaccardWeight * jacc + hrrWeight * hrrSim) / totalWeight;
       const decay = temporalDecay(entry.lastReferenced, temporalDecayHalfLifeDays);
       const freq = frequencyBoost ? rawFreqs[i] / maxFreq : 1.0;
-      return { entry, score: normFts * decay * freq };
+      return { entry, score: relevance * decay * freq, relevance };
     })
+    .filter((s) => s.relevance >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map(({ entry }) => entry);
+}
+
+/**
+ * Backfill HRR vectors for any memory rows that don't have one yet (or that
+ * were encoded at a different dimension). Returns the number of rows updated.
+ * Safe to call repeatedly — it is idempotent for entries already at hrrDim.
+ */
+export function backfillHrrVectors(
+  dbManager: DatabaseManager,
+  hrrDim: number = DEFAULT_HRR_DIM
+): number {
+  const db = dbManager.getDb();
+  const rows = db.prepare(
+    'SELECT id, content FROM memories WHERE hrr_vector IS NULL OR hrr_dim IS NULL OR hrr_dim != ?'
+  ).all(hrrDim) as Array<{ id: number; content: string }>;
+  if (rows.length === 0) return 0;
+  const update = db.prepare('UPDATE memories SET hrr_vector = ?, hrr_dim = ? WHERE id = ?');
+  let n = 0;
+  for (const row of rows) {
+    try {
+      const vec = phasesToBytes(encodeText(row.content, hrrDim));
+      update.run(vec, hrrDim, row.id);
+      n++;
+    } catch {
+      // skip
+    }
+  }
+  return n;
 }
 
 /**

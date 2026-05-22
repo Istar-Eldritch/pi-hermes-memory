@@ -46,6 +46,7 @@ import { registerLearnMemoryCommand } from "./handlers/learn-memory.js";
 import { registerSyncMarkdownMemoriesCommand, syncMarkdownMemoriesToSqlite } from "./handlers/sync-markdown-memories.js";
 import { setupAutoRetrieval } from "./handlers/auto-retrieval.js";
 import { registerPreviewContextCommand } from "./handlers/preview-context.js";
+import { registerBackfillHrrCommand } from "./handlers/backfill-hrr.js";
 import { loadConfig } from "./config.js";
 import { detectProject, detectProjectSkills } from "./project.js";
 import { buildPromptContext } from "./prompt-context.js";
@@ -195,6 +196,7 @@ export default function (pi: ExtensionAPI) {
   registerLearnMemoryCommand(pi);
   registerSyncMarkdownMemoriesCommand(pi, dbManager, globalDir, config.projectsMemoryDir, agentRoot);
   registerPreviewContextCommand(pi, store, projectStore, projectName, config);
+  registerBackfillHrrCommand(pi, dbManager);
 
   // ── 10. SQLite session search + extended memory ──
   registerSessionSearchTool(pi, dbManager, config.sessionSearch ?? { variant: "legacy" });
