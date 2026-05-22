@@ -656,16 +656,22 @@ export function searchMemories(
   const rawRanks = rows.map(r => Math.abs(r.fts_rank));
   const maxRank = Math.max(...rawRanks, 1e-6);
 
-  // Frequency boost: log(1 + count) normalised by the max in the candidate set.
-  const rawFreqs = rows.map(r => Math.log1p(r.reference_count));
+  // Frequency boost: log(1 + accesses/day) normalised by the max in the candidate set.
+  // Using rate (count / age) rather than raw count so older entries don't accumulate
+  // an unfair advantage over newer ones with a higher access rate.
+  const now = Date.now();
+  const rawFreqs = rows.map(r => {
+    const ageDays = Math.max(1, (now - Date.parse(r.created)) / 86_400_000);
+    return Math.log1p(r.reference_count / ageDays);
+  });
   const maxFreq = Math.max(...rawFreqs, 1e-6);
 
   return rows
-    .map(r => {
+    .map((r, i) => {
       const entry = mapRow(r);
       const normFts = Math.abs(r.fts_rank) / maxRank;
       const decay = temporalDecay(entry.lastReferenced, temporalDecayHalfLifeDays);
-      const freq = frequencyBoost ? Math.log1p(r.reference_count) / maxFreq : 1.0;
+      const freq = frequencyBoost ? rawFreqs[i] / maxFreq : 1.0;
       return { entry, score: normFts * decay * freq };
     })
     .sort((a, b) => b.score - a.score)

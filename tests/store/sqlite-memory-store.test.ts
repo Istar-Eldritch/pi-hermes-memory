@@ -226,18 +226,22 @@ describe('sqlite-memory-store', () => {
     });
 
     describe('frequency boost scoring', () => {
-      it('ranks frequently-retrieved entry above a fresh one when frequencyBoost is enabled', () => {
+      it('ranks high-rate entry above a high-count-but-old entry when frequencyBoost is enabled', () => {
         const db = dbManager.getDb();
 
-        const frequent = addMemory(dbManager, 'deployment pipeline configuration steps');
-        const fresh = addMemory(dbManager, 'deployment pipeline configuration steps');
+        // Old entry: 100 hits over 365 days ≈ 0.27/day
+        const old = addMemory(dbManager, 'deployment pipeline configuration steps');
+        const oldDate = new Date(Date.now() - 365 * 86_400_000).toISOString().split('T')[0];
+        db.prepare('UPDATE memories SET created = ?, reference_count = 100 WHERE id = ?').run(oldDate, old.id);
 
-        // Simulate 10 prior retrievals on the first entry
-        db.prepare('UPDATE memories SET reference_count = 10 WHERE id = ?').run(frequent.id);
+        // Recent entry: 10 hits over 7 days ≈ 1.43/day
+        const recent = addMemory(dbManager, 'deployment pipeline configuration steps');
+        const recentDate = new Date(Date.now() - 7 * 86_400_000).toISOString().split('T')[0];
+        db.prepare('UPDATE memories SET created = ?, reference_count = 10 WHERE id = ?').run(recentDate, recent.id);
 
         const results = searchMemories(dbManager, 'deployment pipeline', { frequencyBoost: true });
         const ids = results.map(r => r.id);
-        assert.ok(ids.indexOf(frequent.id) < ids.indexOf(fresh.id), 'frequently-retrieved entry should rank above fresh entry');
+        assert.ok(ids.indexOf(recent.id) < ids.indexOf(old.id), 'high-rate entry should rank above high-count-but-old entry');
       });
 
       it('preserves order when frequencyBoost is disabled', () => {
