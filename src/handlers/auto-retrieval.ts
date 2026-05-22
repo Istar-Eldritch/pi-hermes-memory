@@ -12,6 +12,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DatabaseManager } from "../store/db.js";
 import { searchMemories } from "../store/sqlite-memory-store.js";
+import { extractContentTerms } from "../utils/stopwords.js";
+
+const MIN_CONTENT_TERMS = 2;
 
 const FENCE_OPEN = "<memory-context>";
 const FENCE_CLOSE = "</memory-context>";
@@ -64,6 +67,18 @@ export function setupAutoRetrieval(
 
     const query = text.trim();
     if (!query) return;
+
+    // Skip trivial conversational follow-ups: if the message has fewer than
+    // MIN_CONTENT_TERMS non-stopword tokens, the query is too generic to
+    // produce useful matches and will surface unrelated memories.
+    const contentTerms = extractContentTerms(query);
+    if (contentTerms.length < MIN_CONTENT_TERMS) {
+      prefetchedBlock = "";
+      if (lastCtx?.hasUI) {
+        try { lastCtx.ui.setWidget(WIDGET_KEY, undefined); } catch { /* ignore */ }
+      }
+      return;
+    }
 
     prefetchPending = true;
 
