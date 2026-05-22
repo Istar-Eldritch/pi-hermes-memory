@@ -27,7 +27,11 @@ export const SCHEMA_SQL = `
     role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
     content TEXT NOT NULL,
     timestamp TEXT NOT NULL,
-    tool_calls TEXT
+    tool_calls TEXT,
+    reference_count INTEGER NOT NULL DEFAULT 1,
+    last_referenced TEXT,
+    hrr_vector BLOB,
+    hrr_dim INTEGER
   );
 
   -- FTS5 index for full-text search across messages

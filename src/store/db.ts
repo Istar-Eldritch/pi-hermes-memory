@@ -126,6 +126,7 @@ export class DatabaseManager {
     // legacy CHECK(target IN ('memory','user')) constraints to include 'failure'.
     this.ensureMemoriesColumns(db);
     this.migrateLegacyMemoriesTargetConstraint(db);
+    this.ensureMessagesColumns(db);
     this.rebuildMemoryFts(db);
 
     return db;
@@ -164,6 +165,27 @@ export class DatabaseManager {
     }
     if (!names.has('hrr_dim')) {
       db.exec('ALTER TABLE memories ADD COLUMN hrr_dim INTEGER');
+    }
+  }
+
+  private ensureMessagesColumns(db: DatabaseLike): void {
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='messages'").get() as { name: string } | undefined;
+    if (!tableExists) return;
+
+    const columns = db.prepare('PRAGMA table_info(messages)').all() as { name: string }[];
+    const names = new Set(columns.map((c) => c.name));
+
+    if (!names.has('reference_count')) {
+      db.exec('ALTER TABLE messages ADD COLUMN reference_count INTEGER NOT NULL DEFAULT 1');
+    }
+    if (!names.has('last_referenced')) {
+      db.exec('ALTER TABLE messages ADD COLUMN last_referenced TEXT');
+    }
+    if (!names.has('hrr_vector')) {
+      db.exec('ALTER TABLE messages ADD COLUMN hrr_vector BLOB');
+    }
+    if (!names.has('hrr_dim')) {
+      db.exec('ALTER TABLE messages ADD COLUMN hrr_dim INTEGER');
     }
   }
 

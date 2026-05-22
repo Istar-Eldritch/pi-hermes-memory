@@ -1,5 +1,6 @@
 import { DatabaseManager } from './db.js';
 import { parseSessionFile, getSessionFiles, type ParsedSession } from './session-parser.js';
+import { encodeText, phasesToBytes, DEFAULT_HRR_DIM } from './hrr.js';
 
 /**
  * Index result for a single session.
@@ -50,19 +51,28 @@ export function indexSession(dbManager: DatabaseManager, session: ParsedSession)
 
   // Insert messages in a transaction for performance
   const insertMsg = db.prepare(`
-    INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, last_referenced, hrr_vector, hrr_dim)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const writeMessages = (messages: ParsedSession['messages']) => {
     for (const msg of messages) {
+      let hrrVector: Buffer | null = null;
+      try {
+        hrrVector = phasesToBytes(encodeText(msg.content, DEFAULT_HRR_DIM));
+      } catch {
+        hrrVector = null;
+      }
       insertMsg.run(
         msg.id,
         session.id,
         msg.role,
         msg.content,
         msg.timestamp,
-        msg.toolCalls ? JSON.stringify(msg.toolCalls) : null
+        msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
+        msg.timestamp,
+        hrrVector,
+        hrrVector ? DEFAULT_HRR_DIM : null,
       );
     }
   };

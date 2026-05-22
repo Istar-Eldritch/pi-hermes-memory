@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { DatabaseManager } from '../../src/store/db.js';
 import { indexSession } from '../../src/store/session-indexer.js';
-import { searchSessions, getIndexedMessageCount } from '../../src/store/session-search.js';
+import { searchSessions, getIndexedMessageCount, backfillMessageHrrVectors } from '../../src/store/session-search.js';
 import type { ParsedSession } from '../../src/store/session-parser.js';
 
 describe('session-search', () => {
@@ -125,6 +125,31 @@ describe('session-search', () => {
       // but both terms appear across the indexed messages.
       const results = searchSessions(dbManager, 'prisma migrations');
       assert.ok(results.length > 0, 'expected multi-word query to match via implicit AND');
+    });
+
+    it('should bump reference_count when touch=true', () => {
+      indexSession(dbManager, createTestSession());
+      searchSessions(dbManager, 'Prisma', { touch: true });
+      const db = dbManager.getDb();
+      const row = db.prepare("SELECT reference_count FROM messages WHERE content LIKE '%Prisma%' ORDER BY reference_count DESC LIMIT 1").get() as { reference_count: number };
+      assert.ok(row.reference_count > 1, `expected reference_count > 1, got ${row.reference_count}`);
+    });
+
+    it('should backfill HRR vectors and use them to surface non-FTS candidates', () => {
+      indexSession(dbManager, createTestSession());
+      const n = backfillMessageHrrVectors(dbManager);
+      // Indexer already populates HRR vectors, so backfill should be a no-op.
+      assert.strictEqual(n, 0);
+
+      // "package install" doesn't appear verbatim, but the assistant message
+      // "install the package" should still surface via HRR semantic similarity.
+      const results = searchSessions(dbManager, 'package install', {
+        ftsWeight: 0,
+        jaccardWeight: 0,
+        hrrWeight: 1,
+        temporalDecayHalfLifeDays: 0,
+      });
+      assert.ok(results.length > 0, 'expected HRR stage-2 to return non-FTS candidates');
     });
 
     it('should rank more relevant messages higher with Jaccard reranking', () => {
