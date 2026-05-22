@@ -43,10 +43,10 @@ export function setupAutoRetrieval(
   dbManager: DatabaseManager,
   temporalDecayHalfLifeDays = 0,
   frequencyBoost = false,
-  jaccardWeight = 0.25,
-  hrrWeight = 0.6,
+  jaccardWeight = 0.3,
+  hrrWeight = 0.8,
   ftsWeight = 0.15,
-  minScore = 0.55,
+  minScore = 0.3,
 ): void {
   let prefetchedBlock = "";
   let prefetchPending = false;

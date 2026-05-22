@@ -151,10 +151,10 @@ function main(): void {
   // Baseline = current production defaults from setupAutoRetrieval.
   const baseline: Config = {
     ftsWeight: 0.15,
-    jaccardWeight: 0.25,
-    hrrWeight: 0.6,
-    minScore: 0.55,
-    temporalDecayHalfLifeDays: 0,
+    jaccardWeight: 0.3,
+    hrrWeight: 0.8,
+    minScore: 0.3,
+    temporalDecayHalfLifeDays: 60,
   };
   const baseMetrics = evaluateConfig(dbManager, pairs, baseline);
   console.log(`Baseline (current defaults):  ${fmtCfg(baseline)}`);
