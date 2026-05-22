@@ -41,8 +41,26 @@ export function registerBackfillHrrCommand(
         }
 
         const start = Date.now();
-        const updatedMem = missingMem > 0 ? backfillHrrVectors(dbManager, hrrDim) : 0;
-        const updatedMsg = missingMsg > 0 ? backfillMessageHrrVectors(dbManager, hrrDim) : 0;
+
+        const makeProgress = (label: string) => {
+          let lastNotify = Date.now();
+          return (processed: number, total: number) => {
+            const now = Date.now();
+            // Throttle to roughly once per second; always emit on completion.
+            if (processed === total || now - lastNotify >= 1000) {
+              lastNotify = now;
+              const pct = total > 0 ? Math.floor((processed / total) * 100) : 100;
+              ctx.ui.notify(`🧠 ${label}: ${processed}/${total} (${pct}%)`, "info");
+            }
+          };
+        };
+
+        const updatedMem = missingMem > 0
+          ? backfillHrrVectors(dbManager, hrrDim, makeProgress("Memories"))
+          : 0;
+        const updatedMsg = missingMsg > 0
+          ? backfillMessageHrrVectors(dbManager, hrrDim, makeProgress("Messages"))
+          : 0;
         const elapsedMs = Date.now() - start;
 
         let output = `\n✅ HRR backfill complete!\n\n`;

@@ -728,7 +728,8 @@ export function searchMemories(
  */
 export function backfillHrrVectors(
   dbManager: DatabaseManager,
-  hrrDim: number = DEFAULT_HRR_DIM
+  hrrDim: number = DEFAULT_HRR_DIM,
+  onProgress?: (processed: number, total: number) => void,
 ): number {
   const db = dbManager.getDb();
   const rows = db.prepare(
@@ -737,6 +738,7 @@ export function backfillHrrVectors(
   if (rows.length === 0) return 0;
   const update = db.prepare('UPDATE memories SET hrr_vector = ?, hrr_dim = ? WHERE id = ?');
   let n = 0;
+  let processed = 0;
   for (const row of rows) {
     try {
       const vec = phasesToBytes(encodeText(row.content, hrrDim));
@@ -745,6 +747,8 @@ export function backfillHrrVectors(
     } catch {
       // skip
     }
+    processed++;
+    if (onProgress) onProgress(processed, rows.length);
   }
   return n;
 }

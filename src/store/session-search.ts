@@ -241,7 +241,8 @@ export function touchMessages(dbManager: DatabaseManager, rowids: number[]): voi
  */
 export function backfillMessageHrrVectors(
   dbManager: DatabaseManager,
-  hrrDim: number = DEFAULT_HRR_DIM
+  hrrDim: number = DEFAULT_HRR_DIM,
+  onProgress?: (processed: number, total: number) => void,
 ): number {
   const db = dbManager.getDb();
   const rows = db.prepare(
@@ -250,6 +251,7 @@ export function backfillMessageHrrVectors(
   if (rows.length === 0) return 0;
   const update = db.prepare('UPDATE messages SET hrr_vector = ?, hrr_dim = ? WHERE rowid = ?');
   let n = 0;
+  let processed = 0;
   for (const row of rows) {
     try {
       const vec = phasesToBytes(encodeText(row.content, hrrDim));
@@ -258,6 +260,8 @@ export function backfillMessageHrrVectors(
     } catch {
       // skip
     }
+    processed++;
+    if (onProgress) onProgress(processed, rows.length);
   }
   return n;
 }
