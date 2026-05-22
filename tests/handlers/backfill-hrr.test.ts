@@ -61,6 +61,6 @@ describe("registerBackfillHrrCommand", () => {
 
     const remaining = db.prepare("SELECT COUNT(*) AS c FROM memories WHERE hrr_vector IS NULL").get() as { c: number };
     assert.strictEqual(remaining.c, 0);
-    assert.ok(notifyCalls.some((c) => /Updated: 2/.test(c.message)));
+    assert.ok(notifyCalls.some((c) => /Memories: 2\/\d+ updated/.test(c.message)));
   });
 });

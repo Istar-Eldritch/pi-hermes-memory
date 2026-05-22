@@ -590,7 +590,7 @@ export function searchMemories(
   dbManager: DatabaseManager,
   query: string,
   options: {
-    project?: string;
+    project?: string | null;
     target?: string;
     category?: MemoryCategory;
     limit?: number;

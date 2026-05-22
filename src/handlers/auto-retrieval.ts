@@ -11,7 +11,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DatabaseManager } from "../store/db.js";
-import { searchMemories } from "../store/sqlite-memory-store.js";
+import { searchMemories, type SqliteMemoryEntry } from "../store/sqlite-memory-store.js";
 import { extractContentTerms } from "../utils/stopwords.js";
 
 const MIN_CONTENT_TERMS = 2;
@@ -46,7 +46,10 @@ export function setupAutoRetrieval(
   jaccardWeight = 0.3,
   hrrWeight = 0.5,
   ftsWeight = 0.2,
-  minScore = 0.35,
+  minScore = 0.45,
+  currentProject: string | null = null,
+  crossProjectMinScore = 0.65,
+  crossProjectCap = 1,
 ): void {
   let prefetchedBlock = "";
   let prefetchPending = false;
@@ -82,19 +85,50 @@ export function setupAutoRetrieval(
 
     prefetchPending = true;
 
-    // Run search in the background — don't await, just store result
+    // Run search in the background — don't await, just store result.
+    //
+    // Project scoping: auto-retrieval is a noise-sensitive context, so we
+    // restrict to memories that are likely to be relevant in the current
+    // working directory. Three scopes, in priority order:
+    //   1. current-project memories (project = currentProject) — lenient threshold
+    //   2. global memories          (project IS NULL)         — lenient threshold
+    //   3. other projects                                     — strict threshold + small cap
+    // The explicit memory_search tool still spans everything; only the
+    // automatic prefetch is scoped.
     Promise.resolve().then(() => {
       try {
-        const results = searchMemories(dbManager, query, {
+        const baseOpts = {
           limit: MAX_RESULTS,
           temporalDecayHalfLifeDays,
           frequencyBoost,
           ftsWeight,
           jaccardWeight,
           hrrWeight,
-          minScore,
-        });
-        const contents = results.map((r) => r.content);
+        };
+
+        const projectResults = currentProject
+          ? searchMemories(dbManager, query, { ...baseOpts, project: currentProject, minScore })
+          : [];
+        const globalResults = searchMemories(dbManager, query, { ...baseOpts, project: null, minScore });
+        const crossResults = crossProjectCap > 0
+          ? searchMemories(dbManager, query, { ...baseOpts, minScore: crossProjectMinScore })
+              .filter((r) => r.project != null && r.project !== currentProject)
+              .slice(0, crossProjectCap)
+          : [];
+
+        const merged: SqliteMemoryEntry[] = [];
+        const seen = new Set<number>();
+        for (const batch of [projectResults, globalResults, crossResults]) {
+          for (const r of batch) {
+            if (seen.has(r.id)) continue;
+            seen.add(r.id);
+            merged.push(r);
+            if (merged.length >= MAX_RESULTS) break;
+          }
+          if (merged.length >= MAX_RESULTS) break;
+        }
+
+        const contents = merged.map((r) => r.content);
         if (contents.length > 0) {
           prefetchedBlock = buildMemoryContextBlock(contents);
           if (lastCtx?.hasUI) {
