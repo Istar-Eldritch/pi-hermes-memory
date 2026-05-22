@@ -24,6 +24,7 @@ export function runPiTask(task: string, options: PiTaskOptions = {}): Promise<vo
 
   const args = [
     '--no-session',
+    '--model', 'openrouter/anthropic/claude-haiku-4-5-20251001',
     '--thinking', 'off',
     '--tools', tools.join(','),
     `@${taskFile}`,
