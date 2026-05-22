@@ -224,6 +224,40 @@ describe('sqlite-memory-store', () => {
         assert.ok(results.length > 0);
       });
     });
+
+    describe('frequency boost scoring', () => {
+      it('ranks frequently-retrieved entry above a fresh one when frequencyBoost is enabled', () => {
+        const db = dbManager.getDb();
+
+        const frequent = addMemory(dbManager, 'deployment pipeline configuration steps');
+        const fresh = addMemory(dbManager, 'deployment pipeline configuration steps');
+
+        // Simulate 10 prior retrievals on the first entry
+        db.prepare('UPDATE memories SET reference_count = 10 WHERE id = ?').run(frequent.id);
+
+        const results = searchMemories(dbManager, 'deployment pipeline', { frequencyBoost: true });
+        const ids = results.map(r => r.id);
+        assert.ok(ids.indexOf(frequent.id) < ids.indexOf(fresh.id), 'frequently-retrieved entry should rank above fresh entry');
+      });
+
+      it('preserves order when frequencyBoost is disabled', () => {
+        const withBoost = searchMemories(dbManager, 'pnpm', { frequencyBoost: false });
+        const withoutBoost = searchMemories(dbManager, 'pnpm', {});
+        assert.deepStrictEqual(withBoost.map(r => r.id), withoutBoost.map(r => r.id));
+      });
+
+      it('increments reference_count on touchMemory', () => {
+        const entry = addMemory(dbManager, 'some fact worth touching');
+        assert.strictEqual(entry.referenceCount, 1);
+
+        touchMemory(dbManager, entry.id);
+        touchMemory(dbManager, entry.id);
+
+        const db = dbManager.getDb();
+        const row = db.prepare('SELECT reference_count FROM memories WHERE id = ?').get(entry.id) as { reference_count: number };
+        assert.strictEqual(row.reference_count, 3);
+      });
+    });
   });
 
   describe('getMemories', () => {
