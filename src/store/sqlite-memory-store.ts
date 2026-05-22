@@ -12,7 +12,7 @@ const MEMORY_SELECT_COLUMNS = `
   corrected_to,
   created,
   last_referenced,
-  COALESCE(reference_count, 0) AS reference_count
+  reference_count
 `;
 
 const FAILURE_CATEGORY_SET = new Set<MemoryCategory>([
@@ -101,7 +101,7 @@ function mapRow(row: {
   corrected_to: string | null;
   created: string;
   last_referenced: string;
-  reference_count?: number;
+  reference_count: number;
 }): SqliteMemoryEntry {
   return {
     id: row.id,
@@ -114,7 +114,7 @@ function mapRow(row: {
     correctedTo: row.corrected_to,
     created: row.created,
     lastReferenced: row.last_referenced,
-    referenceCount: row.reference_count ?? 0,
+    referenceCount: row.reference_count,
   };
 }
 
@@ -164,6 +164,7 @@ function getMemoryById(dbManager: DatabaseManager, id: number): SqliteMemoryEntr
     corrected_to: string | null;
     created: string;
     last_referenced: string;
+    reference_count: number;
   } | undefined;
 
   return row ? mapRow(row) : null;
@@ -624,7 +625,7 @@ export function searchMemories(
   const candidateLimit = reranking ? limit * 3 : limit;
 
   const sql = `
-    SELECT m.id, m.project, m.target, m.category, m.content, m.failure_reason, m.tool_state, m.corrected_to, m.created, m.last_referenced, COALESCE(m.reference_count, 0) AS reference_count, memory_fts.rank AS fts_rank
+    SELECT m.id, m.project, m.target, m.category, m.content, m.failure_reason, m.tool_state, m.corrected_to, m.created, m.last_referenced, m.reference_count, memory_fts.rank AS fts_rank
     FROM memory_fts
     JOIN memories m ON m.id = memory_fts.rowid
     ${whereClause}
@@ -729,6 +730,7 @@ export function getMemories(
     corrected_to: string | null;
     created: string;
     last_referenced: string;
+    reference_count: number;
   }>;
 
   return rows.map(mapRow);
@@ -785,6 +787,7 @@ export function getRecentFailures(
     corrected_to: string | null;
     created: string;
     last_referenced: string;
+    reference_count: number;
   }>;
 
   return rows.map(mapRow);
@@ -795,7 +798,7 @@ export function getRecentFailures(
  */
 export function touchMemory(dbManager: DatabaseManager, id: number): void {
   const db = dbManager.getDb();
-  db.prepare('UPDATE memories SET last_referenced = ?, reference_count = COALESCE(reference_count, 0) + 1 WHERE id = ?').run(today(), id);
+  db.prepare('UPDATE memories SET last_referenced = ?, reference_count = reference_count + 1 WHERE id = ?').run(today(), id);
 }
 
 /**
